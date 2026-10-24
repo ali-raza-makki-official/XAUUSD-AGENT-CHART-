@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, repairHistory, runAgent, runAiTool, toolCatalog,
-  type AccountInfo, type ChartControl, type IndicatorStore, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
+  type AccountInfo, type AlertCommand, type ChartControl, type IndicatorStore, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
   type FeedStatus, type Tick, type Timeframe,
 } from '@aurum/core';
 import type { AurumApi } from '../../shared';
@@ -82,6 +82,7 @@ export function useAiChat(deps: ChatDeps) {
     const perms = () => (st().paused ? DENIED : AiPermissionsSchema.parse(st().config?.aiPermissions ?? {}));
     const toolCtx = () => ({
       store: st().store, indicators: st().indicators, chart: st().chart, permissions: perms(), getState: state,
+      alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
       getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
       getSpec: () => st().spec, startOfToday,
       context: {
@@ -98,7 +99,7 @@ export function useAiChat(deps: ChatDeps) {
     commit([...msgs.current, { role: 'user', blocks: [{ type: 'text', text: `${context}\n\n${text.trim()}` }] }]);
 
     const p = perms();
-    const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, orderMode: p.orders });
+    const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders });
     try {
       const r = await runAgent(msgs.current, {
         system, tools: toolCatalog(p), signal: ac.signal,

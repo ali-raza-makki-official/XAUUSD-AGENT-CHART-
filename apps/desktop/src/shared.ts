@@ -1,4 +1,5 @@
 import type {
+  AlertCommand, AlertDispatchResult, AlertsSnapshot, FireRecord,
   AccountInfo, AppConfig, Candle, CalendarEvent, ConnectionTest, ConnectorHealth, ConnectorKind, ConnectorManifest, ConnectorResult, ContextSource,
   Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, NewsItem, ProviderId, RelatedMarkets, SentimentReading, SessionsSnapshot, SymbolSpec, Tick, Timeframe,
 } from '@aurum/core';
@@ -66,6 +67,13 @@ export interface AurumApi {
   contextClearSecret(id: string): Promise<void>;
   loadChat(): Promise<string | null>;
   saveChat(json: string): Promise<void>;
+  alertsSnapshot(limit?: number): Promise<AlertsSnapshot>;
+  alertsDispatch(cmd: AlertCommand): Promise<AlertDispatchResult>;
+  alertsUndo(): Promise<boolean>;
+  alertsRedo(): Promise<boolean>;
+  alertsTestFire(id: string): Promise<{ ok: boolean; error?: string }>;
+  onAlertsChanged(cb: (s: AlertsSnapshot) => void): () => void;
+  onAlertFired(cb: (f: FireRecord) => void): () => void;
   onTick(cb: (t: Tick) => void): () => void;
   onStatus(cb: (s: FeedStatus) => void): () => void;
   onAccount(cb: (a: AccountInfo | null) => void): () => void;
@@ -101,6 +109,13 @@ export const IPC = {
   contextClearSecret: 'ctx:clearSecret',
   loadChat: 'chat:load',
   saveChat: 'chat:save',
+  alertsSnapshot: 'alerts:snapshot',
+  alertsDispatch: 'alerts:dispatch',
+  alertsUndo: 'alerts:undo',
+  alertsRedo: 'alerts:redo',
+  alertsTestFire: 'alerts:testFire',
+  alertsChanged: 'alerts:changed',
+  alertFired: 'alerts:fired',
   tick: 'feed:tick',
   status: 'feed:status',
   account: 'feed:account',

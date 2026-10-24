@@ -257,3 +257,17 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .outrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 36px 60px; gap: 8px; align-items: center; }
 .rtab { padding: 0 4px; font-size: 12px; }
 .ometa { max-width: 38%; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- alerts ---------- */
+.alist { display: grid; gap: 4px; }
+.arow { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-raised); }
+.arow .kind { width: 28px; height: 28px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--bg-panel); border: 1px solid var(--border); color: var(--gold); flex: none; }
+.ainfo { display: grid; min-width: 0; flex: 1; }
+.ainfo b, .ainfo .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alast { min-width: 150px; text-align: right; }
+.toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: grid; gap: 8px; width: 340px; max-width: calc(100vw - 32px); }
+.toast { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg-raised); border: 1px solid var(--gold-dim); border-left: 3px solid var(--gold); border-radius: var(--r-md); box-shadow: var(--shadow); color: var(--gold); }
+.toast-warning { border-left-color: var(--warn); color: var(--warn); }
+.toast-critical { border-left-color: var(--sell); color: var(--sell); }
+.toast-b { display: grid; flex: 1; min-width: 0; color: var(--t1); user-select: text; }
+.toast-b span { color: var(--t2); font-size: 12px; }

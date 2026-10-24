@@ -13,7 +13,11 @@ import * as db from './db';
 import { AlertService } from './alerts';
 import { electronNotifier, registerAlertIpc } from './alertIpc';
 import { initAutoUpdate } from './updater';
-import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey } from './secrets';
+import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey, clearWhatsAppToken, getWhatsAppToken, setWhatsAppToken } from './secrets';
+import { getDb } from './db';
+import { WhatsAppService } from './whatsappService';
+import { SqliteWhatsAppStore } from './whatsappStore';
+import { registerWhatsAppIpc } from './whatsappIpc';
 import { ContextHub } from './contextHub';
 import { IPC } from '../shared';
 
@@ -21,6 +25,7 @@ let config: AppConfig;
 const bridge = new BridgeManager();
 let hub: ContextHub;
 let alerts: AlertService;
+let wa: WhatsAppService;
 let win: BrowserWindow | null = null;
 
 const CSP =
@@ -47,6 +52,7 @@ function createWindow(): void {
     },
   });
   win.once('ready-to-show', () => win?.show());
+  win.webContents.on('did-start-loading', () => wa?.setAiReady(false)); // the renderer re-announces itself once mounted
   // Navigation controls: the app never navigates away or opens windows; external links go to the OS browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
@@ -184,6 +190,19 @@ else {
     });
     alerts.start(); // runs in the main process, so alerts keep working with the window hidden
     registerIpc();
+    wa = new WhatsAppService({
+      store: new SqliteWhatsAppStore(getDb()),
+      secrets: { secureStorageAvailable, getToken: getWhatsAppToken, setToken: setWhatsAppToken, clearToken: clearWhatsAppToken },
+      getTick: () => bridge.lastTick,
+      getFeedStatus: () => bridge.status,
+      sendToRenderer: (channel, payload) => { if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return false; win.webContents.send(channel, payload); return true; },
+      baseUrl: process.env.AURUM_WHATSAPP_BASE_URL || undefined,
+      symbolLabel: () => config.symbol,
+      getAlerts: () => alerts.listView().map((v) => ({ id: v.alert.id, name: v.alert.name, enabled: v.alert.enabled, summary: v.summary, state: v.status })),
+      registerNotificationChannel: (ch) => alerts.registry.register(ch),
+    });
+    registerWhatsAppIpc(ipcMain, wa);
+    wa.start();
     createWindow();
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
     void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
@@ -194,6 +213,7 @@ else {
   app.on('before-quit', () => {
     hub?.stop();
     alerts?.stop();
+    void wa?.stop();
     void bridge.stop();
     closeDb();
   });

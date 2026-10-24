@@ -1,30 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, repairHistory, runAgent, runAiTool, toolCatalog,
-  type AccountInfo, type AlertCommand, type ChartControl, type IndicatorStore, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
-  type FeedStatus, type Tick, type Timeframe,
-} from '@aurum/core';
-import type { AurumApi } from '../../shared';
+import { repairHistory, type ChatMessage } from '@aurum/core';
+import { contextLine, perms, runTurn, type ChatDeps } from './aiTurn';
 
-export interface ChatDeps {
-  api: AurumApi | undefined;
-  config: AppConfig | null;
-  store: DrawingStore;
-  tf: Timeframe;
-  tick: Tick | null;
-  status: FeedStatus;
-  account: AccountInfo | null;
-  spec: ContractSpec | null;
-  selectedId: string | null;
-  paused: boolean;
-  indicators?: IndicatorStore;
-  chart?: ChartControl;
-  layout?: { layout: 'single' | 'two' | 'four'; paneTimeframes: Timeframe[]; activePane: number; syncScroll: boolean };
-}
+export type { ChatDeps } from './aiTurn';
 
 const MAX_SAVED = 120;
-const DENIED = AiPermissionsSchema.parse({ chartRead: false });
-const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
 export function useAiChat(deps: ChatDeps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -68,46 +48,12 @@ export function useAiChat(deps: ChatDeps) {
     setRunning(true);
 
     const st = () => d.current;
-    const state = (): ChartState => {
-      const c = st();
-      return {
-        symbol: c.config?.symbol ?? 'XAUUSD', brokerSymbol: c.config?.brokerSymbol ?? '', timeframe: c.tf,
-        feed: `${c.status.state}${c.status.message ? ` (${c.status.message})` : ''}`,
-        bid: c.tick?.bid ?? null, ask: c.tick?.ask ?? null, spread: c.tick?.spread ?? null, tickTime: c.tick?.time ?? null,
-        account: c.account ? { demo: c.account.demo, currency: c.account.currency, balance: c.account.balance, equity: c.account.equity } : null,
-        selectedDrawingId: c.selectedId, pipSize: c.config?.pipSize ?? 0.1,
-        ...(c.layout ? { layout: c.layout.layout, paneTimeframes: c.layout.paneTimeframes, activePane: c.layout.activePane, syncScroll: c.layout.syncScroll } : {}),
-      };
-    };
-    const perms = () => (st().paused ? DENIED : AiPermissionsSchema.parse(st().config?.aiPermissions ?? {}));
-    const toolCtx = () => ({
-      store: st().store, indicators: st().indicators, chart: st().chart, permissions: perms(), getState: state,
-      alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
-      getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
-      getSpec: () => st().spec, startOfToday,
-      context: {
-        getSessions: () => st().api!.contextRead('sessions'),
-        getFeeds: (k: 'calendar' | 'news' | 'sentiment') => st().api!.contextRead(k) as Promise<never>,
-        getRelated: () => st().api!.contextRead('related'),
-        noTrade: st().config?.context.noTrade ?? NoTradeRuleSchema.parse({}),
-      }, exposeBalance: st().config?.ai.sendBalance ?? false,
-    });
-
-    const s = state();
-    const all = st().store.list();
-    const context = `[context] ${s.symbol} (${s.brokerSymbol}) ${s.timeframe} | bid ${s.bid ?? 'n/a'} ask ${s.ask ?? 'n/a'} | feed ${st().status.state} | selected drawing: ${s.selectedDrawingId ?? 'none'} | drawings: ${all.length} (AI ${all.filter((x) => x.layer === 'ai').length})`;
-    commit([...msgs.current, { role: 'user', blocks: [{ type: 'text', text: `${context}\n\n${text.trim()}` }] }]);
-
-    const p = perms();
-    const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders });
+    commit([...msgs.current, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${text.trim()}` }] }]);
+    const p = perms(st());
     try {
-      const r = await runAgent(msgs.current, {
-        system, tools: toolCatalog(p), signal: ac.signal,
-        llm: (req) => { reqId.current = crypto.randomUUID(); return api.aiChat(reqId.current, req); },
-        exec: async (name, input) => {
-          const res = await runAiTool(toolCtx(), name, input);
-          return { ok: res.ok, content: JSON.stringify(res) };
-        },
+      const r = await runTurn(st, msgs.current, p, {
+        signal: ac.signal,
+        onRequest: (id) => { reqId.current = id; },
         onMessage: (m) => commit([...msgs.current, m]),
         onEvent: (e) => e.type === 'usage' && setUsage((u) => ({ input: u.input + e.input, output: u.output + e.output })),
       });

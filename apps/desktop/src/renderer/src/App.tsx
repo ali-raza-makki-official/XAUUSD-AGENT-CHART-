@@ -11,6 +11,7 @@ import { TopBar } from './components/TopBar';
 import { BottomPanel } from './components/Panels';
 import { ChatPanel } from './components/ChatPanel';
 import { useAiChat } from './useAiChat';
+import { useWhatsAppAi } from './useWhatsAppAi';
 import { SettingsDialog } from './components/Settings';
 import { Toolbar } from './components/Toolbar';
 import { Activity, Bot, Layers, SlidersHorizontal } from 'lucide-react';
@@ -50,11 +51,10 @@ export function App() {
   const [spec, setSpec] = useState<SymbolSpec | null>(null);
   const selected = useMemo(() => drawings.find((d) => d.id === selectedId) ?? null, [drawings, selectedId]);
 
-  const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused,
-    indicators: ind.store,
-    chart: { setLayout: (l, t) => { void update(withLayout(layoutCfg, l, t)); }, setPaneTimeframe: (p, t) => { void update(withPaneTimeframe(layoutCfg, p, t)); }, setSyncScroll: (on) => { void update({ syncScroll: on }); } },
-    layout: { layout, paneTimeframes: tfs, activePane, syncScroll: config?.syncScroll ?? false },
-  });
+  const aiChart = { setLayout: (l: ChartLayout, t?: Timeframe[]) => { void update(withLayout(layoutCfg, l, t)); }, setPaneTimeframe: (p: number, t: Timeframe) => { void update(withPaneTimeframe(layoutCfg, p, t)); }, setSyncScroll: (on: boolean) => { void update({ syncScroll: on }); } };
+  const aiLayout = { layout, paneTimeframes: tfs, activePane, syncScroll: config?.syncScroll ?? false };
+  const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused, indicators: ind.store, chart: aiChart, layout: aiLayout });
+  useWhatsAppAi({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused, indicators: ind.store, chart: aiChart, layout: aiLayout });
   useEffect(() => { if (api && !settings) void api.aiStatus().then((s) => setHasKey(s.hasKey)); }, [api, settings]);
   const aiProvider = config?.ai.provider ?? null;
   const aiReady = !!aiProvider && !!hasKey[aiProvider];

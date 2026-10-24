@@ -4,6 +4,8 @@ import type {
   Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, NewsItem, ProviderId, RelatedMarkets, SentimentReading, SessionsSnapshot, SymbolSpec, Tick, Timeframe,
 } from '@aurum/core';
 
+import type { WhatsAppApi } from './whatsappShared';
+
 export type ContextKindId = 'sessions' | 'calendar' | 'news' | 'sentiment' | 'related';
 /** Everything the Context panel and the AI tools read. Each datapoint inside carries source + fetchedAt. */
 export interface ContextSnapshot {
@@ -32,7 +34,7 @@ export interface ConnectorStatus {
 }
 
 /** The only surface the renderer gets from the main process (see preload). */
-export interface AurumApi {
+export interface AurumApi extends WhatsAppApi {
   getConfig(): Promise<AppConfig>;
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>;
   candles(tf: Timeframe, count: number): Promise<Candle[]>;

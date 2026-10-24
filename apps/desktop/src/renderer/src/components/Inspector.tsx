@@ -5,6 +5,8 @@ import {
 } from '@aurum/core';
 import { ColorField, CommitNumber, CommitText, Field } from './Fields';
 import { kindIcon, kindName } from '../lib/toolIcons';
+import { DrawingAlertAction } from './AlertsPanel';
+import type { AurumApi } from '../../../shared';
 import { Button, Chip, EmptyState, IconButton, Section, Segmented, Switch } from './ui';
 
 type Patch = Record<string, unknown>;
@@ -16,6 +18,8 @@ interface Props {
   onPatch: (patch: Patch, label: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  api?: AurumApi;
+  price?: number | null;
 }
 
 const BLOCK: Record<string, string> = {
@@ -146,6 +150,8 @@ export function Inspector(props: Props) {
         )}
 
         {d.kind === 'position' && <PositionFields {...props} d={d} />}
+
+        <DrawingAlertAction api={props.api} d={d} price={props.price ?? null} />
 
         <Section title="Visible on timeframes" action={<Switch label="All timeframes" checked={allTf} onChange={(v) => onPatch({ timeframes: v ? 'all' : ['H1'] }, 'Change timeframe visibility')} />}>
           <div className="tfgrid">

@@ -16,6 +16,7 @@ import { Toolbar } from './components/Toolbar';
 import { Activity, Bot, Layers, SlidersHorizontal } from 'lucide-react';
 import { Inspector, InspectorEmpty } from './components/Inspector';
 import { ObjectsPanel } from './components/Objects';
+import { AlertToasts } from './components/AlertsPanel';
 import type { ToolId } from './lib/tools';
 
 type RightTab = 'chat' | 'objects' | 'inspector' | 'indicators';
@@ -142,11 +143,12 @@ export function App() {
             />
           )}
           {rightTab === 'inspector' && (selected
-            ? <Inspector d={selected} pipSize={pipSize} spec={spec} account={account} onPatch={(p, l) => patch(selected.id, p, l)} onDelete={() => remove(selected.id)} onDuplicate={() => duplicate(selected)} />
+            ? <Inspector d={selected} pipSize={pipSize} spec={spec} account={account} onPatch={(p, l) => patch(selected.id, p, l)} onDelete={() => remove(selected.id)} onDuplicate={() => duplicate(selected)} api={api} price={tick?.bid ?? null} />
             : <InspectorEmpty />)}
         </div>
       </div>
       <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} api={api} config={config} />
+      <AlertToasts api={api} />
       {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}
       {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} initialTab={settings} onClose={() => setSettings(false)} />}
     </div>

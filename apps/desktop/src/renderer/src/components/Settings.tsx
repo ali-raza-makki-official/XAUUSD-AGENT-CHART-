@@ -99,7 +99,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
       <Section title="What the AI may do">
         <div className="perm"><div><b>Read chart and analyse</b><span className="hint">Candles, drawings, quotes, risk maths</span></div><Switch label="Chart read" checked={perms.chartRead} onChange={(v) => setPerm('chartRead', v)} /></div>
         <div className="perm"><div><b>Draw and edit on the chart</b><span className="hint">Its own layer; locked drawings stay untouchable; every change is undoable</span></div><Switch label="Drawings edit" checked={perms.drawingsEdit} onChange={(v) => setPerm('drawingsEdit', v)} /></div>
-        <div className="perm off"><div><b>Create alerts and setups</b><span className="hint">Coming with the alerts module</span></div><Switch label="Alerts and setups" checked={false} onChange={() => undefined} disabled /></div>
+        <div className="perm"><div><b>Create alerts and setups</b><span className="hint">Alerts are checked by code on the live feed, not by the AI. Every change is undoable; the AI can keep at most 50 alerts.</span></div><Switch label="Alerts and setups" checked={perms.alertsAndSetups} onChange={(v) => setPerm('alertsAndSetups', v)} /></div>
         <div className="perm off"><div><b>Place orders, edit SL/TP, partial and bulk close</b><span className="hint">Not enabled yet. The AI can only suggest; it cannot touch real orders.</span></div><Lock size={14} aria-hidden="true" /></div>
         <div className="perm off"><div><b>Connectors and credentials</b><span className="hint">Never available to the AI</span></div><Lock size={14} aria-hidden="true" /></div>
       </Section>

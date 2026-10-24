@@ -2,13 +2,16 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
 import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
+import * as db from './db';
+import { AlertService } from './alerts';
+import { electronNotifier, registerAlertIpc } from './alertIpc';
 import { initAutoUpdate } from './updater';
 import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey } from './secrets';
 import { ContextHub } from './contextHub';
@@ -17,6 +20,7 @@ import { IPC } from '../shared';
 let config: AppConfig;
 const bridge = new BridgeManager();
 let hub: ContextHub;
+let alerts: AlertService;
 let win: BrowserWindow | null = null;
 
 const CSP =
@@ -75,6 +79,7 @@ function registerIpc(): void {
         paneTimeframes: PaneTimeframesSchema,
         syncScroll: z.boolean(),
         context: ContextSettingsSchema,
+        notifications: NotificationSettingsSchema,
       })
       .partial()
       .parse(patch);
@@ -99,6 +104,7 @@ function registerIpc(): void {
       })
       .parse(raw);
     persist(p);
+    alerts.refreshDrawings(); // alert conditions reference drawing ids
   });
   ipcMain.handle(IPC.loadIndicators, (_e, symbol: unknown) => loadIndicators(z.string().min(1).max(32).parse(symbol)));
   ipcMain.handle(IPC.persistIndicators, (_e, raw: unknown) => {
@@ -144,6 +150,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.saveChat, (_e, j: unknown) => saveChat(z.string().max(5_000_000).parse(j)));
   ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol));
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
+  registerAlertIpc(ipcMain, alerts, send);
   bridge.on('tick', (t) => send(IPC.tick, t));
   bridge.on('status', (s) => send(IPC.status, s));
   bridge.on('account', (a) => send(IPC.account, a));
@@ -171,6 +178,11 @@ else {
       cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [CSP] } });
     });
     hub = new ContextHub(() => config, bridge);
+    alerts = new AlertService({
+      feed: bridge, db, getConfig: () => config,
+      show: electronNotifier(() => { win?.show(); win?.focus(); }),
+    });
+    alerts.start(); // runs in the main process, so alerts keep working with the window hidden
     registerIpc();
     createWindow();
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
@@ -181,6 +193,7 @@ else {
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
     hub?.stop();
+    alerts?.stop();
     void bridge.stop();
     closeDb();
   });

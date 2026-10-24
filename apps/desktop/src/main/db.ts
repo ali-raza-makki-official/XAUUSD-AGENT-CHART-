@@ -19,6 +19,10 @@ function open(): DatabaseSync {
       json TEXT NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS drawings_ws_symbol ON drawings (workspace_id, symbol);
+    CREATE TABLE IF NOT EXISTS chats (
+      id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (id, workspace_id)
+    );
     CREATE TABLE IF NOT EXISTS command_log (
       command_id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, symbol TEXT NOT NULL,
       actor TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -78,4 +82,13 @@ export function persist(p: PersistPayload): void {
 export function closeDb(): void {
   db?.close();
   db = null;
+}
+
+const CHAT_ID = 'default';
+export function loadChat(): string | null {
+  const row = open().prepare('SELECT json FROM chats WHERE id = ? AND workspace_id = ?').get(CHAT_ID, WORKSPACE) as { json: string } | undefined;
+  return row ? String(row.json) : null;
+}
+export function saveChat(json: string): void {
+  open().prepare('INSERT INTO chats (id, workspace_id, json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id, workspace_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at').run(CHAT_ID, WORKSPACE, json, Date.now());
 }

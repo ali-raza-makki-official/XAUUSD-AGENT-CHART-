@@ -93,6 +93,8 @@ export interface ToolContext {
   getState(): ChartState;
   getCandles(tf: Timeframe, count: number): Promise<Candle[]>;
   getSpec(): ContractSpec | null;
+  /** Whether balance/equity and money amounts may be returned to the AI provider. Off by default. */
+  exposeBalance?: boolean;
   /** Start of "today" for the undo-all-AI-changes-today tool. */
   startOfToday(): number;
   newId?: () => string;
@@ -142,12 +144,35 @@ function toDrawing(ctx: ToolContext, d: NewDrawingInput, commandId: string): Dra
 
 const cid = (ctx: ToolContext) => ctx.newId?.() ?? globalThis.crypto.randomUUID();
 
+const AnalysisSchema = z.object({
+  noSetup: z.boolean().describe('True when there is no clear setup. This is a valid, good answer.'),
+  dataReference: z.object({ timeframes: z.array(TimeframeSchema).min(1), asOf: z.string().describe('Time of the last candle used, broker clock, ISO-8601'), feed: z.string().describe('Feed/broker name as given by get_chart_state') }),
+  marketStructure: z.object({ state: z.enum(['bullish', 'bearish', 'ranging', 'unclear']), summary: z.string().max(600) }),
+  levels: z.array(z.object({ price: z.number().positive(), kind: z.enum(['support', 'resistance', 'supply', 'demand', 'pivot', 'other']), reason: z.string().max(300) })).max(12),
+  scenarios: z.array(z.object({ condition: z.string().max(300), outcome: z.string().max(300) })).max(4),
+  invalidation: z.string().max(400),
+  missingInformation: z.array(z.string().max(200)).max(8),
+  actionsTaken: z.array(z.string().max(200)).max(10).describe('What you created/edited on the chart, if anything.'),
+});
+export type Analysis = z.infer<typeof AnalysisSchema>;
+
 export const AI_TOOLS: AiTool[] = [
+  {
+    name: 'submit_analysis',
+    description: 'Deliver the final structured analysis card to the user. Call exactly once at the end of any analysis request. Use noSetup=true when there is no clear setup.',
+    input: AnalysisSchema, needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    run: () => ({ ok: true, data: { recorded: true } }),
+  },
   {
     name: 'get_chart_state',
     description: 'Current symbol, timeframe, live bid/ask/spread, feed status, account type (demo/live) and balance, selected drawing id.',
     input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
-    run: (ctx) => ({ ok: true, data: ctx.getState() }),
+    run(ctx) {
+      const st = ctx.getState();
+      if (ctx.exposeBalance || !st.account) return { ok: true, data: st };
+      const { balance: _b, equity: _e, ...account } = st.account;
+      return { ok: true, data: { ...st, account } };
+    },
   },
   {
     name: 'get_candles',
@@ -233,7 +258,7 @@ export const AI_TOOLS: AiTool[] = [
         data: {
           issues, slDistance: dist, slPips: priceToPips(dist, st.pipSize),
           targets: i.takeProfits.map((p) => ({ price: p, pips: priceToPips(Math.abs(p - i.entry), st.pipSize), rewardRisk: rewardRisk(probe, p) })),
-          sizing: sized ?? 'unavailable: needs a connected MT5 account and contract spec',
+          sizing: !sized ? 'unavailable: needs a connected MT5 account and contract spec' : ctx.exposeBalance ? sized : { lots: sized.lots, blocked: sized.blocked ?? null },
           currency: st.account?.currency ?? null,
         },
       };

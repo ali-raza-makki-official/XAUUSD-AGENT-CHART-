@@ -1,11 +1,13 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { DrawingSchema, StyleSchema } from '@aurum/core';
+import { AiPermissionsSchema, AiSettingsSchema, DrawingSchema, PROVIDER_IDS, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
-import { closeDb, loadDrawings, persist } from './db';
+import { closeDb, loadChat, loadDrawings, persist, saveChat } from './db';
+import * as llm from './llm';
+import { clearKey, hasKey, secureStorageAvailable, setKey } from './secrets';
 import { IPC } from '../shared';
 
 let config: AppConfig;
@@ -58,6 +60,8 @@ function registerIpc(): void {
         toolStyles: z.record(z.string(), StyleSchema.partial()),
         magnet: z.boolean(),
         stayInTool: z.boolean(),
+        aiPermissions: AiPermissionsSchema,
+        ai: AiSettingsSchema,
       })
       .partial()
       .parse(patch);
@@ -82,6 +86,28 @@ function registerIpc(): void {
       .parse(raw);
     persist(p);
   });
+  const provider = (v: unknown) => ProviderIdSchema.parse(v);
+  ipcMain.handle(IPC.aiStatus, () => ({
+    secureStorage: secureStorageAvailable(),
+    hasKey: Object.fromEntries(PROVIDER_IDS.map((p) => [p, hasKey(p)])),
+  }));
+  ipcMain.handle(IPC.aiSetKey, (_e, p: unknown, k: unknown) => setKey(provider(p), z.string().min(8).max(500).parse(k)));
+  ipcMain.handle(IPC.aiClearKey, (_e, p: unknown) => clearKey(provider(p)));
+  ipcMain.handle(IPC.aiListModels, (_e, p: unknown) => llm.listModels(config, provider(p)));
+  ipcMain.handle(IPC.aiTest, (_e, p: unknown) => llm.test(config, provider(p)));
+  ipcMain.handle(IPC.aiChat, (_e, id: unknown, req: unknown) => {
+    const blocks = z.array(z.object({ type: z.enum(['text', 'tool_call', 'tool_result']) }).passthrough());
+    const parsed = z.object({
+      system: z.string().max(20000),
+      messages: z.array(z.object({ role: z.enum(['user', 'assistant']), blocks })).max(400),
+      tools: z.array(z.object({ name: z.string(), description: z.string(), inputSchema: z.record(z.string(), z.unknown()) })).max(40),
+      maxTokens: z.number().int().min(16).max(16000),
+    }).parse(req);
+    return llm.chat(config, z.string().min(1).max(64).parse(id), parsed as never);
+  });
+  ipcMain.handle(IPC.aiAbort, (_e, id: unknown) => llm.abort(z.string().parse(id)));
+  ipcMain.handle(IPC.loadChat, () => loadChat());
+  ipcMain.handle(IPC.saveChat, (_e, j: unknown) => saveChat(z.string().max(5_000_000).parse(j)));
   ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol));
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
   bridge.on('tick', (t) => send(IPC.tick, t));

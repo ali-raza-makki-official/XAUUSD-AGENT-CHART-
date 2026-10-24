@@ -21,6 +21,19 @@ export const RiskSettingsSchema = z.object({
 export type RiskSettings = z.infer<typeof RiskSettingsSchema>;
 export const DEFAULT_RISK_SETTINGS: RiskSettings = RiskSettingsSchema.parse({});
 
+export const ProviderIdSchema = z.enum(['anthropic', 'openai', 'gemini', 'deepseek']);
+
+export const AiSettingsSchema = z.object({
+  provider: ProviderIdSchema.nullable().default(null),
+  /** Chosen model per provider. Models differ per account, so there is no baked-in default to go stale. */
+  models: z.record(z.string(), z.string().max(100)).default({}),
+  /** Optional base URL override per provider (OpenAI-compatible gateways, proxies, local servers). */
+  baseUrls: z.record(z.string(), z.string().max(300)).default({}),
+  /** Send account balance/equity to the AI provider. Off by default; lot sizing still works locally. */
+  sendBalance: z.boolean().default(false),
+});
+export type AiSettings = z.infer<typeof AiSettingsSchema>;
+
 export const OrderMode = z.enum(['suggest', 'confirm', 'automatic']);
 
 /** AI capability matrix. Defaults are the safe side everywhere. */
@@ -49,6 +62,7 @@ export const AppConfigSchema = z.object({
   stayInTool: z.boolean().default(false),
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
+  ai: AiSettingsSchema.default(() => AiSettingsSchema.parse({})),
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export const DEFAULT_APP_CONFIG: AppConfig = AppConfigSchema.parse({});

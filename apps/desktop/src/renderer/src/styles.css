@@ -205,3 +205,32 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .dtable td { padding: 3px 6px; }
 .dtable td:first-child { text-transform: capitalize; }
 .scroll { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+
+/* ---------- AI chat ---------- */
+.chat-h { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); flex: none; }
+.chat-model { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.msgs { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.m-user { align-self: flex-end; max-width: 92%; background: var(--bg-hover); border: 1px solid var(--border-strong); border-radius: var(--r-md) var(--r-md) 2px var(--r-md); padding: 8px 12px; white-space: pre-wrap; user-select: text; }
+.m-ai { align-self: stretch; user-select: text; }
+.m-tool { display: flex; align-items: center; gap: 6px; color: var(--t2); font-size: 12px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; align-self: flex-start; }
+.m-tool.bad { color: var(--warn); border-color: rgba(232,144,60,.4); background: var(--warn-bg); }
+.banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; font-size: 12px; }
+.banner-danger { background: var(--sell-bg); color: var(--sell); border-bottom: 1px solid rgba(240,97,109,.35); }
+.banner-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(232,144,60,.35); border-radius: var(--r-sm); user-select: text; }
+.sugg { display: grid; gap: 6px; margin-top: 8px; }
+.sugg-btn { text-align: left; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; color: var(--t2); cursor: pointer; transition: border-color var(--dur), color var(--dur); }
+.sugg-btn:hover { border-color: var(--gold-dim); color: var(--t1); }
+.usage { padding: 4px 12px 8px; color: var(--t3); font-size: 11px; display: flex; align-items: center; gap: 6px; }
+.md p, .md ul { margin: 0 0 8px; } .md ul { padding-left: 18px; } .md li { margin: 2px 0; }
+.md-code { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 0 4px; font-size: 12px; }
+.acard { border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-raised); overflow: hidden; user-select: text; }
+.ac-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.ac-h strong { margin-right: auto; }
+.ac-row { padding: 8px 12px; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
+.ac-t { display: flex; align-items: center; gap: 6px; color: var(--t3); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.ac-b { color: var(--t1); }
+.ac-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.ac-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.ac-price { color: var(--gold); font-weight: 600; min-width: 64px; }
+.ac-f { padding: 8px 12px; color: var(--t3); font-size: 11px; }
+.tabs-sm { margin-bottom: 4px; }

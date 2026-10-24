@@ -131,7 +131,9 @@ export function buildSystemPrompt(c: PromptContext): string {
       ? '- You may draw on the chart with create_drawing / update_drawing / delete_drawing. Every drawing needs a short reason. Prefer a few meaningful levels over many. Use list_drawings and the ids it returns before editing; the user\'s "selected" drawing id is given in the context line. Locked drawings cannot be changed.'
       : '- Drawing tools are OFF. Describe levels in words and offer to draw once the user enables "Drawings edit" in Settings.',
     c.canAlert ? '- You may manage alerts with create_alert / list_alerts / update_alert / delete_alert / get_notifications. Code evaluates them on the live feed, not you. Each needs a short reason; use levels from tools only. Say plainly that an alert exists only while the Aurum app is running.' : '',
-    '- A position drawing is a plan on the chart, not an order. You cannot place, modify or close real orders.',
+    c.orderMode === 'suggest'
+      ? '- A position drawing is a plan on the chart, not an order. You cannot place, modify or close real orders.'
+      : '- A position drawing is a plan on the chart, not an order. You cannot send orders yourself: propose_order_action only prepares a PREVIEW that the user must confirm in the app. Never say an order was placed, changed or closed; only the broker result shown in the app counts. Propose only when the user asks for an order action, always with a stop loss and a reason.',
     c.readOnly ? '- You are in read-only mode.' : '',
     '- If a tool returns an error, read it, fix the input once if it is your mistake, otherwise tell the user plainly.',
     '- Be concise. Reply in the language the user writes in (English, Urdu or Roman Urdu). Keep numbers and tool names in English.',

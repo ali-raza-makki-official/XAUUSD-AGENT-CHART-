@@ -1,6 +1,6 @@
 import {
   AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, runAgent, runAiTool, toolCatalog,
-  type AccountInfo, type AgentResult, type AlertCommand, type ChartControl, type IndicatorStore, type AiPermissions, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
+  type AccountInfo, type AgentResult, type AlertCommand, type PrepareResult, type ChartControl, type IndicatorStore, type AiPermissions, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
   type FeedStatus, type Tick, type Timeframe,
 } from '@aurum/core';
 import type { AurumApi } from '../../shared';
@@ -16,6 +16,8 @@ export interface ChatDeps {
   spec: ContractSpec | null;
   selectedId: string | null;
   paused: boolean;
+  /** The chat panel supplies this so an AI order preview is shown to the user as a confirm dialog. Absent (e.g. WhatsApp) = no order tool. */
+  onOrderProposal?: (p: PrepareResult) => void;
   indicators?: IndicatorStore;
   chart?: ChartControl;
   layout?: { layout: 'single' | 'two' | 'four'; paneTimeframes: Timeframe[]; activePane: number; syncScroll: boolean };
@@ -58,6 +60,11 @@ export interface TurnOpts {
 export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermissions, o: TurnOpts = {}): Promise<AgentResult> {
   const toolCtx = () => ({
     store: st().store, indicators: st().indicators, chart: st().chart, permissions: p, getState: () => chartState(st()),
+    ...(st().onOrderProposal && st().config && st().api ? { orders: {
+      orderMode: p.orders, maxRiskPerTradePct: st().config!.risk.maxRiskPerTradePct, symbol: st().config!.brokerSymbol,
+      positions: async () => (await st().api!.ordersState()).positions,
+      propose: async (cmd: unknown) => { const res = await st().api!.ordersPrepare(cmd); if (res.ok && 'preview' in res) st().onOrderProposal?.(res); return res; },
+    } } : {}),
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     getSpec: () => st().spec, startOfToday,

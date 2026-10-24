@@ -44,8 +44,9 @@ export function useOrderFlow(api: AurumApi | undefined, symbol: string) {
       }}
     />
   );
+  const showPrepared = useCallback((p: PrepareResult) => { if (p.ok && 'preview' in p) setPhase({ k: 'review', p: p as Prepared, extra: ['Proposed by the AI. Check every line yourself; the risk rules run again when you confirm.'] }); }, []);
   const fail = useCallback((message: string) => setPhase({ k: 'error', message }), []);
-  return { open, fail, dialog };
+  return { open, fail, showPrepared, dialog };
 }
 
 function OrderDialog({ phase, onClose, onConfirm, onReconcile }: { phase: Phase; onClose: () => void; onConfirm: () => void; onReconcile: () => void }) {

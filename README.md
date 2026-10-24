@@ -17,7 +17,7 @@ Wired and compiled, tests pass, but NOT checked in a running app:
 Orders (demo only, wired this session; checked in a real Electron run against the bridge test fake, NOT against real MT5):
 - Settings > Trading enables order placement (Aurum refuses live accounts). Positions tab with SL to entry, set SL/TP, partial close 25/50%, close.
 - "Place this order" on a Long/Short drawing: lot size from risk %, review, explicit Confirm. Every action goes through the risk gate and a confirm dialog; results show MT5's answer; unknown results are never resent.
-- Stop AI sets the kill switch for AI-origin orders. The AI cannot place orders yet (`propose_order_action` is hidden).
+- AI orders: only when Settings > AI > "Orders by the AI" is set to Confirm (needs trading enabled). The AI prepares a PREVIEW (`propose_order_action`); you press Confirm; the risk gate runs again. In Suggest mode the tool is not offered at all. Bulk close is never available to the AI. Stop AI sets the kill switch.
 - Run the manual test plan in `docs/ORDERS.md` on an Exness DEMO account before trusting any of it.
 
 The Windows installer and CI are configured but have never run on Windows (`docs/RELEASING.md`).

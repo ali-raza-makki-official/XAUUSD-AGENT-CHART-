@@ -39,3 +39,20 @@ deal => confirmed. No trace must be seen on two checks a few seconds apart befor
 Everything against a real terminal: filling modes on Exness, retcodes, history-window/server-time behaviour, comment
 preservation on close deals, hedging vs netting. Run a DEMO-only manual test (open, SL modify, partial close, close,
 pending place/cancel, kill the bridge mid-order) before any further work.
+
+
+## Wired in the app (this iteration)
+Main process `orders.ts` (BrokerPort over the bridge, SQLite `order_records` and `order_activity`), IPC `orders:*`, Positions tab,
+confirm dialog, "Place this order" in the Inspector, Settings > Trading, Stop AI -> kill switch.
+Verified in real Electron against the bridge test fake (`bridge/tests/fake_mt5.py`): SL to entry, partial close 50%, full close, activity log,
+records persisted. NOT verified: real MT5 (filling modes, retcodes, comments on close deals, hedging vs netting), AI-initiated orders (not wired),
+pending orders UI, "external change" labels, the daily-limit policy with a real deal history.
+
+## Manual test plan on an Exness DEMO account (Windows)
+1. Open MT5, log in to the DEMO account, check the app shows `DEMO` in the top bar.
+2. Settings > Trading: enable, set risk limits (start small), Save. The bridge restarts.
+3. Draw a Long position, set risk % to 0.1, select it, Inspector > "Place this order". Read the review: lots, SL, risk. Confirm. Check MT5 shows the position with the SL.
+4. Positions tab: "SL to entry", confirm; check MT5. Then 25% partial close, check volume in MT5. Then Close.
+5. Press "Stop AI", try nothing from the AI: orders from the AI are not wired yet. Manual orders must still work.
+6. Close MT5 while a confirm is pending, press Confirm: expect "Not sent" or "Result unknown" and NO second order after reconnecting.
+7. Anything unexpected: stop, keep screenshots and the Feed log text, and report. To roll back: close positions in MT5 and untick Settings > Trading.

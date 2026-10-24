@@ -73,6 +73,8 @@ export const AppConfigSchema = z.object({
   syncScroll: z.boolean().default(false),
   /** Per-tool default style overrides (colour, width, line style, fill), keyed by drawing kind. */
   toolStyles: z.record(z.string(), StyleSchema.partial()).default({}),
+  /** Order placement. Off by default; only ever started against DEMO accounts by this app. */
+  trading: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   magnet: z.boolean().default(true),
   stayInTool: z.boolean().default(false),
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),

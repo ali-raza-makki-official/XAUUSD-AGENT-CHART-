@@ -18,6 +18,8 @@ interface Props {
   onPatch: (patch: Patch, label: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  /** Opens the order confirm flow for a long/short plan. Absent when trading is not enabled. */
+  onPlaceOrder?: () => void;
   api?: AurumApi;
   price?: number | null;
 }
@@ -150,6 +152,12 @@ export function Inspector(props: Props) {
         )}
 
         {d.kind === 'position' && <PositionFields {...props} d={d} />}
+        {d.kind === 'position' && props.onPlaceOrder && (
+          <Section title="Order">
+            <Button variant="primary" onClick={props.onPlaceOrder}>Place this order…</Button>
+            <span className="hint">Opens a review: lot size from your risk %, the stop loss and the exact risk. Nothing is sent until you confirm there.</span>
+          </Section>
+        )}
 
         <DrawingAlertAction api={props.api} d={d} price={props.price ?? null} />
 

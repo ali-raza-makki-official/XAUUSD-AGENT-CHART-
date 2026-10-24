@@ -18,7 +18,7 @@ interface Props {
   initialTab?: TabId;
 }
 
-export type TabId = 'general' | 'styles' | 'ai' | 'connectors' | 'whatsapp';
+export type TabId = 'general' | 'styles' | 'ai' | 'connectors' | 'whatsapp' | 'trading';
 
 function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSave: Props['onSave'] }) {
   const [ai, setAi] = useState<AiSettings>(config.ai);
@@ -116,6 +116,39 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
   );
 }
 
+function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSave'] }) {
+  const [enabled, setEnabled] = useState(config.trading.enabled);
+  const [risk, setRisk] = useState(config.risk);
+  const [msg, setMsg] = useState<string | null>(null);
+  const num = (k: keyof typeof risk, label: string, step = 0.1) => (
+    <div className="irow" key={String(k)}>
+      <span className="ilabel">{label}</span>
+      <input className="input mono" type="number" step={step} min={0} value={Number(risk[k])} aria-label={label} onChange={(e) => setRisk({ ...risk, [k]: Number(e.target.value) })} />
+    </div>
+  );
+  return (
+    <>
+      <Section title="Order placement">
+        <div className="perm"><div><b>Enable trading from Aurum (demo accounts only)</b><span className="hint">Starts the MT5 bridge with order endpoints. Aurum refuses live accounts. Every order still needs your Confirm click.</span></div><Switch label="Enable trading" checked={enabled} onChange={setEnabled} /></div>
+        <Chip tone="warn">Test on an Exness DEMO account first. See docs/ORDERS.md.</Chip>
+      </Section>
+      <Section title="Risk limits (checked by code before every order)">
+        {num('maxRiskPerTradePct', 'Max risk per trade (% of balance)')}
+        {num('maxOpenRiskPct', 'Max total open risk (%)')}
+        {num('maxDailyLossPct', 'Max daily loss (%)')}
+        {num('maxSpread', 'Max spread (price)', 0.05)}
+        {num('maxSlippage', 'Max slippage (price)', 0.05)}
+        {num('maxSimultaneousPositions', 'Max open positions', 1)}
+        <div className="irow"><span className="ilabel">After daily limit</span>
+          <Segmented<'manage_only' | 'freeze'> label="Daily limit policy" size="sm" value={risk.dailyLimitPolicy === 'freeze' ? 'freeze' : 'manage_only'} onChange={(v) => setRisk({ ...risk, dailyLimitPolicy: v })} options={[{ value: 'manage_only', label: 'Manage only' }, { value: 'freeze', label: 'Freeze' }]} />
+        </div>
+        <span className="hint">Manage only: no new risk, but you can move SL toward safety and close or reduce. A stop loss is always required.</span>
+      </Section>
+      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
+    </>
+  );
+}
+
 export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'general' }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [symbol, setSymbol] = useState(config.brokerSymbol);
@@ -146,7 +179,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
       <div className="dialog" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="dialog-h">
           <h3>Settings</h3>
-          <Segmented<TabId> label="Settings section" size="sm" value={tab} onChange={setTab} options={[{ value: 'general', label: 'General' }, { value: 'styles', label: 'Drawing styles' }, { value: 'ai', label: 'AI' }, { value: 'connectors', label: 'Connectors' }, { value: 'whatsapp', label: 'WhatsApp' }]} />
+          <Segmented<TabId> label="Settings section" size="sm" value={tab} onChange={setTab} options={[{ value: 'general', label: 'General' }, { value: 'styles', label: 'Drawing styles' }, { value: 'ai', label: 'AI' }, { value: 'trading', label: 'Trading' }, { value: 'connectors', label: 'Connectors' }, { value: 'whatsapp', label: 'WhatsApp' }]} />
           <IconButton label="Close settings" onClick={onClose}><X size={16} /></IconButton>
         </div>
         <div className="dialog-b">
@@ -199,12 +232,13 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
             </div>
           )}
           {tab === 'ai' && <AiTab api={api} config={config} onSave={onSave} />}
+          {tab === 'trading' && <TradingTab config={config} onSave={onSave} />}
           {tab === 'connectors' && <ConnectorsSettings api={api} config={config} onSave={onSave} />}
           {tab === 'whatsapp' && <WhatsAppSettings api={api} />}
         </div>
         <div className="dialog-f">
           <Button onClick={onClose}>{tab === 'ai' || tab === 'connectors' || tab === 'whatsapp' ? 'Close' : 'Cancel'}</Button>
-          {tab !== 'ai' && tab !== 'connectors' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), mt5Path: mt5Path.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
+          {tab !== 'ai' && tab !== 'connectors' && tab !== 'trading' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), mt5Path: mt5Path.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
         </div>
       </div>
     </div>

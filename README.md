@@ -14,10 +14,11 @@ Wired and compiled, tests pass, but NOT checked in a running app:
 - WhatsApp gateway (`docs/WHATSAPP.md`): tested only against a mock server; the end-to-end Electron run did not complete.
 - Connectors (`docs/CONNECTORS.md`): the sessions clock works locally; calendar, news and sentiment need a provider URL from you.
 
-Built and unit-tested, NOT connected to the app (so the app cannot place or change orders):
-- The MT5 trading layer in the bridge and the order engine / risk gate in `packages/core` (`docs/ORDERS.md`).
-  Missing: main-process service, Positions tab, confirm dialogs, "Place this order", trading settings, Stop-AI kill-switch hookup.
-- The `propose_order_action` AI tool exists but answers "unavailable".
+Orders (demo only, wired this session; checked in a real Electron run against the bridge test fake, NOT against real MT5):
+- Settings > Trading enables order placement (Aurum refuses live accounts). Positions tab with SL to entry, set SL/TP, partial close 25/50%, close.
+- "Place this order" on a Long/Short drawing: lot size from risk %, review, explicit Confirm. Every action goes through the risk gate and a confirm dialog; results show MT5's answer; unknown results are never resent.
+- Stop AI sets the kill switch for AI-origin orders. The AI cannot place orders yet (`propose_order_action` is hidden).
+- Run the manual test plan in `docs/ORDERS.md` on an Exness DEMO account before trusting any of it.
 
 The Windows installer and CI are configured but have never run on Windows (`docs/RELEASING.md`).
 

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
@@ -16,6 +16,7 @@ import { initAutoUpdate } from './updater';
 import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey, clearWhatsAppToken, getWhatsAppToken, setWhatsAppToken } from './secrets';
 import { getDb } from './db';
 import { WhatsAppService } from './whatsappService';
+import { OrderService } from './orders';
 import { SqliteWhatsAppStore } from './whatsappStore';
 import { registerWhatsAppIpc } from './whatsappIpc';
 import { ContextHub } from './contextHub';
@@ -26,6 +27,7 @@ const bridge = new BridgeManager();
 let hub: ContextHub;
 let alerts: AlertService;
 let wa: WhatsAppService;
+let orders: OrderService;
 let win: BrowserWindow | null = null;
 
 const CSP =
@@ -75,6 +77,8 @@ function registerIpc(): void {
       .object({
         brokerSymbol: z.string().min(1).max(32),
         mt5Path: z.string().max(400),
+        trading: z.object({ enabled: z.boolean() }),
+        risk: RiskSettingsSchema,
         pipSize: z.number().positive(),
         timeframe: TimeframeSchema,
         toolStyles: z.record(z.string(), StyleSchema.partial()),
@@ -90,10 +94,10 @@ function registerIpc(): void {
       })
       .partial()
       .parse(patch);
-    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path);
+    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path) || (allowed.trading !== undefined && allowed.trading.enabled !== config.trading.enabled);
     config = saveConfig(allowed, config);
     if (allowed.context) hub.sync();
-    if (symbolChanged) await bridge.start(config.brokerSymbol, config.mt5Path);
+    if (symbolChanged) await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
     return config;
   });
   ipcMain.handle(IPC.candles, (_e, tf: unknown, count: unknown) =>
@@ -155,7 +159,13 @@ function registerIpc(): void {
   ipcMain.handle(IPC.contextClearSecret, (_e, id: unknown) => clearConnectorSecret(known(id)));
   ipcMain.handle(IPC.loadChat, () => loadChat());
   ipcMain.handle(IPC.saveChat, (_e, j: unknown) => saveChat(z.string().max(5_000_000).parse(j)));
-  ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol, config.mt5Path));
+  ipcMain.handle(IPC.ordersState, () => orders.state());
+  ipcMain.handle(IPC.ordersPrepare, (_e, c: unknown) => orders.engine.prepare(c));
+  ipcMain.handle(IPC.ordersConfirm, (_e, id: unknown) => orders.engine.confirm(z.string().min(8).max(80).parse(id)));
+  ipcMain.handle(IPC.ordersReconcile, (_e, id: unknown) => orders.engine.reconcile(z.string().min(8).max(80).parse(id)));
+  ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
+  ipcMain.handle(IPC.ordersActivity, () => orders.activity());
+  ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled));
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
   registerAlertIpc(ipcMain, alerts, send);
   bridge.on('tick', (t) => send(IPC.tick, t));
@@ -189,6 +199,7 @@ else {
       feed: bridge, db, getConfig: () => config,
       show: electronNotifier(() => { win?.show(); win?.focus(); }),
     });
+    orders = new OrderService(bridge, () => config, getDb);
     alerts.start(); // runs in the main process, so alerts keep working with the window hidden
     registerIpc();
     wa = new WhatsAppService({
@@ -208,7 +219,7 @@ else {
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
     void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
     hub.start();
-    await bridge.start(config.brokerSymbol, config.mt5Path);
+    await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {

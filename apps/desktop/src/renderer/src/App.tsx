@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PROVIDERS, translatePatch, paneTimeframes, withLayout, withPaneTimeframe, undoNewest, redoOldest, DEFAULT_PANE_TIMEFRAMES, LAYOUT_PANES, type ChartLayout, type Drawing, type DrawingOp, type SymbolSpec, type Timeframe } from '@aurum/core';
+import { planFromPosition, PROVIDERS, translatePatch, paneTimeframes, withLayout, withPaneTimeframe, undoNewest, redoOldest, DEFAULT_PANE_TIMEFRAMES, LAYOUT_PANES, type ChartLayout, type Drawing, type DrawingOp, type SymbolSpec, type Timeframe } from '@aurum/core';
 import { useFeed } from './hooks';
 import { useIndicators } from './useIndicators';
 import { ChartGrid } from './components/ChartGrid';
@@ -10,6 +10,8 @@ import { useDrawings } from './useDrawings';
 import { TopBar } from './components/TopBar';
 import { BottomPanel } from './components/Panels';
 import { ChatPanel } from './components/ChatPanel';
+import { useOrderFlow } from './components/OrderConfirm';
+import { PositionsPanel } from './components/PositionsPanel';
 import { useAiChat } from './useAiChat';
 import { useWhatsAppAi } from './useWhatsAppAi';
 import { SettingsDialog } from './components/Settings';
@@ -35,7 +37,7 @@ export function App() {
   sync.scroll = (config?.syncScroll ?? false) && layout !== 'single';
   const [indDialog, setIndDialog] = useState(false);
   const [selectedInd, setSelectedInd] = useState<string | null>(null);
-  const [settings, setSettings] = useState<false | 'general' | 'ai'>(false);
+  const [settings, setSettings] = useState<false | 'general' | 'ai' | 'trading'>(false);
   const [aiPaused, setAiPaused] = useState(false);
   const [hasKey, setHasKey] = useState<Record<string, boolean>>({});
 
@@ -55,6 +57,14 @@ export function App() {
   const aiLayout = { layout, paneTimeframes: tfs, activePane, syncScroll: config?.syncScroll ?? false };
   const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused, indicators: ind.store, chart: aiChart, layout: aiLayout });
   useWhatsAppAi({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused, indicators: ind.store, chart: aiChart, layout: aiLayout });
+  const flow = useOrderFlow(api, config?.brokerSymbol ?? 'GOLD');
+  useEffect(() => { void api?.ordersKill(aiPaused); }, [api, aiPaused]);
+  const placeOrder = (d: Extract<Drawing, { kind: 'position' }>) => {
+    if (!account?.balance || !spec || !tick || !config) return flow.fail('Needs a live MT5 connection with account balance, contract spec and a current price.');
+    const plan = planFromPosition({ drawing: { side: d.side, entry: d.entry, stopLoss: d.stopLoss, takeProfits: d.takeProfits, riskPct: d.riskPct }, balance: account.balance, spec, tick: { bid: tick.bid, ask: tick.ask }, risk: config.risk });
+    if (!plan.ok) return flow.fail(plan.reason);
+    flow.open(plan.body as never, [...plan.placedNow.map((l) => `Placed now: ${l}`), ...plan.plannedOnly.map((l) => `Planned only (not sent): ${l}`)]);
+  };
   useEffect(() => { if (api && !settings) void api.aiStatus().then((s) => setHasKey(s.hasKey)); }, [api, settings]);
   const aiProvider = config?.ai.provider ?? null;
   const aiReady = !!aiProvider && !!hasKey[aiProvider];
@@ -151,8 +161,9 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} api={api} config={config} />
+      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
       <AlertToasts api={api} />
+      {flow.dialog}
       {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}
       {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} initialTab={settings} onClose={() => setSettings(false)} />}
     </div>

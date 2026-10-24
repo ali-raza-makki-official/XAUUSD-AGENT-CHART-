@@ -44,4 +44,11 @@ export const SCHEMA_SQL = `
       fetched_at INTEGER NOT NULL, sig TEXT NOT NULL, json TEXT NOT NULL,
       PRIMARY KEY (workspace_id, connector_id)
     );
+    CREATE TABLE IF NOT EXISTS order_records (
+      command_id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (command_id, workspace_id)
+    );
+    CREATE TABLE IF NOT EXISTS order_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL
+    );
 `;

@@ -70,7 +70,7 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   lastTick: Tick | null = null;
   account: AccountInfo | null = null;
 
-  async start(brokerSymbol: string, mt5Path = ''): Promise<void> {
+  async start(brokerSymbol: string, mt5Path = '', trading = false): Promise<void> {
     await this.stop();
     const gen = ++this.generation;
     this.setStatus({ state: 'starting', message: 'Starting MT5 bridge…' });
@@ -85,6 +85,8 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
         AURUM_PORT: String(this.port),
         AURUM_SYMBOL: brokerSymbol,
         ...(mt5Path ? { AURUM_MT5_PATH: mt5Path } : {}),
+        // Trading endpoints exist only when the user enabled them. AURUM_ALLOW_LIVE is never set by the app: live accounts stay refused.
+        ...(trading ? { AURUM_TRADING: '1' } : { AURUM_TRADING: '' }),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -177,6 +179,17 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
         this.emit('account', null);
       }
     }
+  }
+
+  /** Raw call to the local bridge. Network failures throw (the caller must treat a thrown POST as "unknown"). */
+  async http(method: 'GET' | 'POST', path: string, body?: unknown, timeoutMs = 20_000): Promise<{ status: number; json: any }> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const res = await fetch(`http://127.0.0.1:${this.port}${path}`, {
+      method,
+      headers: { 'X-Aurum-Token': this.token, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { status: res.status, json: await res.json().catch(() => ({})) };
   }
 
   async candles(tf: Timeframe, count: number): Promise<Candle[]> {

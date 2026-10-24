@@ -1,6 +1,7 @@
 import type {
   AlertCommand, AlertDispatchResult, AlertsSnapshot, FireRecord,
   AccountInfo, AppConfig, Candle, CalendarEvent, ConnectionTest, ConnectorHealth, ConnectorKind, ConnectorManifest, ConnectorResult, ContextSource,
+  ActivityEntry, OrderRecord, PrepareResult,
   Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, NewsItem, ProviderId, RelatedMarkets, SentimentReading, SessionsSnapshot, SymbolSpec, Tick, Timeframe,
 } from '@aurum/core';
 
@@ -53,6 +54,12 @@ export interface AurumApi extends WhatsAppApi {
     log: { commandId: string; actor: 'manual' | 'ai'; kind: 'do' | 'undo' | 'redo'; label: string };
     changes: { id: string; after: Indicator | null }[];
   }): Promise<void>;
+  ordersState(): Promise<import('./main/orders').OrdersState>;
+  ordersPrepare(command: unknown): Promise<PrepareResult>;
+  ordersConfirm(commandId: string): Promise<OrderRecord>;
+  ordersReconcile(commandId: string): Promise<OrderRecord>;
+  ordersKill(on: boolean): Promise<void>;
+  ordersActivity(): Promise<ActivityEntry[]>;
   aiStatus(): Promise<{ secureStorage: boolean; hasKey: Record<ProviderId, boolean> }>;
   aiSetKey(provider: ProviderId, key: string): Promise<void>;
   aiClearKey(provider: ProviderId): Promise<void>;
@@ -95,6 +102,12 @@ export const IPC = {
   loadIndicators: 'db:indicators:load',
   persistIndicators: 'db:indicators:persist',
   snapshot: 'feed:snapshot',
+  ordersState: 'orders:state',
+  ordersPrepare: 'orders:prepare',
+  ordersConfirm: 'orders:confirm',
+  ordersReconcile: 'orders:reconcile',
+  ordersKill: 'orders:kill',
+  ordersActivity: 'orders:activity',
   aiStatus: 'ai:status',
   aiSetKey: 'ai:setKey',
   aiClearKey: 'ai:clearKey',

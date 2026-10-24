@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Bell, BookOpen, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
 import { ContextPanel } from './ContextPanel';
@@ -10,6 +10,7 @@ import type { AurumApi } from '../../../shared';
 const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
   { id: 'context', label: 'Context', icon: Globe2, empty: '' },
   { id: 'feed', label: 'Feed log', icon: ScrollText, empty: 'No feed events yet.' },
+  { id: 'positions', label: 'Positions', icon: Briefcase, empty: 'No open positions.' },
   { id: 'alerts', label: 'Alerts', icon: Bell, empty: 'No alerts yet. Alerts and schedules will appear here.' },
   { id: 'setups', label: 'Setups', icon: ListChecks, empty: 'No saved setups yet.' },
   { id: 'journal', label: 'Journal', icon: BookOpen, empty: 'The trade journal is empty.' },
@@ -20,7 +21,7 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi, api, config }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null }) {
+export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -38,8 +39,9 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config }: { log:
         </IconButton>
       </div>
       {open && (
-        <div className="content" role="tabpanel" style={tab === 'alerts' ? { height: 240 } : undefined}>
+        <div className="content" role="tabpanel" style={tab === 'alerts' || tab === 'positions' ? { height: 240 } : undefined}>
           {tab === 'alerts' && <AlertsPanel api={api} config={config} />}
+          {tab === 'positions' && positions}
           {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
             <div className="log">{log.map((l, i) => {

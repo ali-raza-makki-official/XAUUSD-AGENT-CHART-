@@ -70,7 +70,7 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   lastTick: Tick | null = null;
   account: AccountInfo | null = null;
 
-  async start(brokerSymbol: string): Promise<void> {
+  async start(brokerSymbol: string, mt5Path = ''): Promise<void> {
     await this.stop();
     const gen = ++this.generation;
     this.setStatus({ state: 'starting', message: 'Starting MT5 bridge…' });
@@ -84,6 +84,7 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
         AURUM_TOKEN: this.token,
         AURUM_PORT: String(this.port),
         AURUM_SYMBOL: brokerSymbol,
+        ...(mt5Path ? { AURUM_MT5_PATH: mt5Path } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,

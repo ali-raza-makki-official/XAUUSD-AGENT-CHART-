@@ -120,6 +120,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
   const [tab, setTab] = useState<TabId>(initialTab);
   const [symbol, setSymbol] = useState(config.brokerSymbol);
   const [pip, setPip] = useState(String(config.pipSize));
+  const [mt5Path, setMt5Path] = useState(config.mt5Path);
   const [found, setFound] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [styles, setStyles] = useState<Record<string, Style>>(() =>
@@ -163,6 +164,11 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
                 {err && <Chip tone="warn">{err}</Chip>}
               </div>
               <div className="field">
+                <label htmlFor="mt5path">MT5 terminal path (optional)</label>
+                <input id="mt5path" className="input mono" placeholder="Auto-detect (e.g. C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe)" value={mt5Path} onChange={(e) => setMt5Path(e.target.value)} />
+                <span className="hint">Leave empty to attach to the open terminal. Set it if you have several MT5 installs or see "Authorization failed". Open MT5 and log in first.</span>
+              </div>
+              <div className="field">
                 <label htmlFor="pip">Pip size (price units)</label>
                 <input id="pip" className="input mono" style={{ maxWidth: 140 }} value={pip} onChange={(e) => setPip(e.target.value)} />
                 <span className="hint">Gold is usually 0.10, so 50–100 pips is 5–10 in price. Confirm against your broker.</span>
@@ -198,7 +204,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
         </div>
         <div className="dialog-f">
           <Button onClick={onClose}>{tab === 'ai' || tab === 'connectors' || tab === 'whatsapp' ? 'Close' : 'Cancel'}</Button>
-          {tab !== 'ai' && tab !== 'connectors' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
+          {tab !== 'ai' && tab !== 'connectors' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), mt5Path: mt5Path.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
         </div>
       </div>
     </div>

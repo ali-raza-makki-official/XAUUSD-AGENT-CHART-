@@ -74,6 +74,7 @@ function registerIpc(): void {
     const allowed = z
       .object({
         brokerSymbol: z.string().min(1).max(32),
+        mt5Path: z.string().max(400),
         pipSize: z.number().positive(),
         timeframe: TimeframeSchema,
         toolStyles: z.record(z.string(), StyleSchema.partial()),
@@ -89,10 +90,10 @@ function registerIpc(): void {
       })
       .partial()
       .parse(patch);
-    const symbolChanged = allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol;
+    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path);
     config = saveConfig(allowed, config);
     if (allowed.context) hub.sync();
-    if (symbolChanged) await bridge.start(config.brokerSymbol);
+    if (symbolChanged) await bridge.start(config.brokerSymbol, config.mt5Path);
     return config;
   });
   ipcMain.handle(IPC.candles, (_e, tf: unknown, count: unknown) =>
@@ -154,7 +155,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.contextClearSecret, (_e, id: unknown) => clearConnectorSecret(known(id)));
   ipcMain.handle(IPC.loadChat, () => loadChat());
   ipcMain.handle(IPC.saveChat, (_e, j: unknown) => saveChat(z.string().max(5_000_000).parse(j)));
-  ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol));
+  ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol, config.mt5Path));
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
   registerAlertIpc(ipcMain, alerts, send);
   bridge.on('tick', (t) => send(IPC.tick, t));
@@ -207,7 +208,7 @@ else {
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
     void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
     hub.start();
-    await bridge.start(config.brokerSymbol);
+    await bridge.start(config.brokerSymbol, config.mt5Path);
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {

@@ -7,6 +7,8 @@ broker data only; if the terminal is unavailable it raises FeedError and callers
 from __future__ import annotations
 
 import re
+import glob as _glob
+import os
 import threading
 import time
 from typing import Any, Optional
@@ -17,6 +19,35 @@ MAX_QUOTE_SYMBOLS = 12
 # MT5 symbol names: letters, digits and a few separators (e.g. US500.cash, #USTEC, DXY.f, XAUUSDm).
 _SYMBOL_OK = re.compile(r"^[A-Za-z0-9._#@!$&+\-]{1,32}$")
 RECONNECT_MIN_INTERVAL = 2.0
+
+
+def candidate_terminals(env=None, find=_glob.glob) -> list:
+    """MT5 terminals installed on this PC (Windows). Brokers install to names like 'MetaTrader 5 EXNESS'."""
+    env = env if env is not None else os.environ
+    roots = [env.get(k) for k in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA") if env.get(k)]
+    found: list = []
+    for root in roots:
+        for pattern in (os.path.join(root, "*MetaTrader*", "terminal64.exe"), os.path.join(root, "Programs", "*MetaTrader*", "terminal64.exe")):
+            for p in sorted(find(pattern)):
+                if p not in found:
+                    found.append(p)
+    return found
+
+
+def explain_init_error(err) -> str:
+    """Turn MT5's numeric initialize() error into something a trader can act on."""
+    code = err[0] if isinstance(err, (tuple, list)) and err else None
+    if code == -6:
+        return ("MT5 refused the connection (Authorization failed). Check that: (1) the MT5 terminal is open and logged in to your "
+                "account (green connection bars at the bottom right); (2) MT5 and Aurum run at the same privilege level (do not run "
+                "one of them as Administrator); (3) if several MT5 terminals are installed, set the terminal path in Settings > General.")
+    if code in (-10003, -10004):
+        return "Aurum could not start or find the MT5 terminal. Set the full path to terminal64.exe in Settings > General."
+    if code == -10005:
+        return "MT5 did not answer in time. Wait for the terminal to finish loading, then press Retry."
+    if code == -2:
+        return "MT5 reported an invalid argument. Check the terminal path in Settings > General."
+    return f"Cannot attach to the MT5 terminal: {err}. Open MT5 and log in."
 
 
 class FeedError(Exception):
@@ -44,6 +75,7 @@ class Mt5Feed:
         self._connected = False
         self._last_error: Optional[str] = None
         self._last_attempt = 0.0
+        self.terminal_path_used: Optional[str] = None
 
     # -- connection -------------------------------------------------------------------------
     def _module(self) -> Any:
@@ -53,9 +85,22 @@ class Mt5Feed:
 
     def _connect_locked(self) -> None:
         mt5 = self._module()
-        ok = mt5.initialize(self.terminal_path) if self.terminal_path else mt5.initialize()
+        tries = [self.terminal_path] if self.terminal_path else [None] + candidate_terminals()
+        first_error = None
+        ok = False
+        for path in tries:
+            ok = mt5.initialize(path) if path else mt5.initialize()
+            if ok:
+                self.terminal_path_used = path
+                break
+            first_error = first_error if first_error is not None else mt5.last_error()
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
         if not ok:
-            raise FeedError(f"Cannot attach to MT5 terminal: {mt5.last_error()}. Open MT5 and log in.")
+            tried = f" Tried: {', '.join(p or 'the running terminal' for p in tries)}." if len(tries) > 1 else ""
+            raise FeedError(explain_init_error(first_error) + tried)
         term = mt5.terminal_info()
         if term is not None and not getattr(term, "connected", True):
             raise FeedError("MT5 terminal is open but not connected to the broker server.")

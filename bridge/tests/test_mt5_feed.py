@@ -2,7 +2,7 @@
 import unittest
 from types import SimpleNamespace as NS
 
-from aurum_bridge.mt5_feed import FeedError, Mt5Feed
+from aurum_bridge.mt5_feed import FeedError, Mt5Feed, candidate_terminals, explain_init_error
 
 
 class FakeMt5:
@@ -76,6 +76,55 @@ class Mt5FeedTest(unittest.TestCase):
 
     def test_find_symbols(self):
         self.assertEqual(Mt5Feed("GOLD", mt5_module=FakeMt5()).find_symbols(["XAU", "GOLD"]), ["GOLD", "XAUUSDm"])
+
+
+class AuthFailMt5(FakeMt5):
+    def __init__(self, ok_path=None):
+        super().__init__()
+        self.ok_path, self.calls = ok_path, []
+
+    def initialize(self, *a):
+        self.calls.append(a[0] if a else None)
+        return bool(a and a[0] == self.ok_path)
+
+    def last_error(self):
+        return (-6, "Terminal: Authorization failed")
+
+    def shutdown(self):
+        pass
+
+
+class InitErrorTest(unittest.TestCase):
+    def test_auth_failed_gives_actionable_message(self):
+        feed = Mt5Feed("GOLD", mt5_module=AuthFailMt5())
+        h = feed.health()
+        self.assertFalse(h["connected"])
+        self.assertIn("Authorization failed", h["error"])
+        self.assertIn("logged in", h["error"])
+        self.assertIn("Administrator", h["error"])
+
+    def test_tries_installed_terminals_until_one_attaches(self):
+        import aurum_bridge.mt5_feed as m
+        fake = AuthFailMt5(ok_path=r"C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe")
+        orig = m.candidate_terminals
+        m.candidate_terminals = lambda: [r"C:\\Program Files\\MetaTrader 5\\terminal64.exe", fake.ok_path]
+        try:
+            feed = Mt5Feed("GOLD", mt5_module=fake)
+            self.assertTrue(feed.health()["connected"])
+            self.assertEqual(feed.terminal_path_used, fake.ok_path)
+            self.assertEqual(fake.calls[0], None)
+        finally:
+            m.candidate_terminals = orig
+
+    def test_candidate_discovery_uses_program_files_patterns(self):
+        seen = []
+        out = candidate_terminals({"ProgramFiles": "C:/PF"}, find=lambda p: (seen.append(p), ["C:/PF/MetaTrader 5 EXNESS/terminal64.exe"] if "Programs" not in p else [])[1])
+        self.assertEqual(out, ["C:/PF/MetaTrader 5 EXNESS/terminal64.exe"])
+        self.assertTrue(any("*MetaTrader*" in p for p in seen))
+
+    def test_known_codes_explained(self):
+        self.assertIn("path", explain_init_error((-10003, "x")))
+        self.assertIn("Wait", explain_init_error((-10005, "x")))
 
 
 if __name__ == "__main__":

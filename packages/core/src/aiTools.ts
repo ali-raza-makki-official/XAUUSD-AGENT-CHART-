@@ -4,6 +4,9 @@ import { DrawingStore, type DrawingOp } from './drawingStore';
 import { DrawingSchema, makeDrawing, positionIssues, rewardRisk, type Drawing } from './drawing';
 import { lotsForRisk, priceToPips, type ContractSpec } from './risk';
 import { TimeframeSchema, type Candle, type Timeframe } from './feed';
+import { AlertConditionSchema, ChannelsSchema, RepeatSchema, SeveritySchema, makeAlert, referenceIssue, type AlertCondition, type Channels, type Repeat } from './alerts';
+import { type AlertCommand, type AlertDispatchResult } from './alertStore';
+import { type AlertsSnapshot } from './alertMonitor';
 
 /**
  * The only way the AI touches the app. Every tool validates its input with Zod, checks the capability
@@ -93,12 +96,19 @@ export interface ToolContext {
   getState(): ChartState;
   getCandles(tf: Timeframe, count: number): Promise<Candle[]>;
   getSpec(): ContractSpec | null;
+  /** Alert storage + fire history. The same AlertStore command path the manual UI uses (in the desktop app it lives in the main process). */
+  alerts?: AlertsPort;
   /** Whether balance/equity and money amounts may be returned to the AI provider. Off by default. */
   exposeBalance?: boolean;
   /** Start of "today" for the undo-all-AI-changes-today tool. */
   startOfToday(): number;
   newId?: () => string;
   now?: () => number;
+}
+
+export interface AlertsPort {
+  snapshot(): Promise<AlertsSnapshot> | AlertsSnapshot;
+  dispatch(cmd: AlertCommand): Promise<AlertDispatchResult> | AlertDispatchResult;
 }
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; code: 'permission_denied' | 'invalid_input' | 'rejected' | 'unavailable'; error: string };
@@ -143,6 +153,27 @@ function toDrawing(ctx: ToolContext, d: NewDrawingInput, commandId: string): Dra
 }
 
 const cid = (ctx: ToolContext) => ctx.newId?.() ?? globalThis.crypto.randomUUID();
+
+const AiAlertPatch = z.object({
+  name: z.string().trim().min(1).max(80),
+  enabled: z.boolean(),
+  condition: AlertConditionSchema,
+  repeat: RepeatSchema,
+  expiresAt: z.iso.datetime({ offset: true }).nullable(),
+  channels: ChannelsSchema,
+  message: z.string().max(500),
+  severity: SeveritySchema,
+  rearm: z.boolean(),
+}).partial().strict();
+
+/** Price levels inside an alert condition, for the "is this absurdly far from the market" check. */
+function alertPrices(c: AlertCondition): number[] {
+  switch (c.type) {
+    case 'price_cross': case 'candle_close': return [c.level];
+    case 'zone': return c.target.kind === 'range' ? [c.target.low, c.target.high] : [];
+    default: return [];
+  }
+}
 
 const AnalysisSchema = z.object({
   noSetup: z.boolean().describe('True when there is no clear setup. This is a valid, good answer.'),
@@ -262,6 +293,89 @@ export const AI_TOOLS: AiTool[] = [
           currency: st.account?.currency ?? null,
         },
       };
+    },
+  },
+  {
+    name: 'create_alert',
+    description: 'Create a local alert (code evaluates it on the live MT5 feed; you are not called on ticks). Kinds: price_cross, zone (touch/enter/exit; drawing id or explicit range), trendline (drawing id), candle_close, spread, feed, position_plan (entry/sl/tp of a position drawing), session (open/close of sydney/tokyo/london/newyork), schedule (one-off ISO time with offset, or daily HH:MM in an IANA timezone). Repeat defaults to once. Levels must come from tools, never from memory.',
+    input: z.object({
+      name: z.string().max(80).optional(),
+      condition: AlertConditionSchema,
+      repeat: RepeatSchema.optional(),
+      expiresAt: z.iso.datetime({ offset: true }).optional().describe('ISO-8601 time with offset after which the alert stops.'),
+      channels: ChannelsSchema.partial().optional().describe('desktop (default on), whatsapp (flag only), sound'),
+      message: z.string().max(500).optional().describe('Optional template: {name} {price} {level} {reason} {time} {symbol}.'),
+      severity: SeveritySchema.optional(),
+      reason: Reason,
+    }),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx, input: { name?: string; condition: AlertCondition; repeat?: Repeat; expiresAt?: string; channels?: Partial<Channels>; message?: string; severity?: z.infer<typeof SeveritySchema>; reason: string }) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      const bad = priceSanity(ctx, alertPrices(input.condition)) ?? referenceIssue(input.condition, ctx.store.list());
+      if (bad) return fail('invalid_input', bad);
+      const commandId = cid(ctx);
+      const alert = makeAlert(input.condition, {
+        id: ctx.newId?.() ?? globalThis.crypto.randomUUID(), actor: 'ai', now: ctx.now?.() ?? Date.now(), commandId, reason: input.reason,
+        name: input.name, repeat: input.repeat, expiresAt: input.expiresAt ? Date.parse(input.expiresAt) : null, channels: input.channels, message: input.message, severity: input.severity,
+      });
+      const r = await ctx.alerts.dispatch({ commandId, actor: 'ai', label: `AI created alert "${alert.name}"`, ops: [{ op: 'create', alert }] });
+      return r.ok ? { ok: true, data: { commandId, id: alert.id, name: alert.name } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'list_alerts',
+    description: 'All alerts with id, condition, repeat policy, status (armed/disabled/done/expired/waiting/invalid), fire count and last fired time. Use ids from here for update_alert / delete_alert.',
+    input: z.object({}),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      const snap = await ctx.alerts.snapshot();
+      return { ok: true, data: snap.alerts.map((v) => ({ id: v.alert.id, name: v.alert.name, enabled: v.alert.enabled, origin: v.alert.origin.by, condition: v.alert.condition, summary: v.summary, repeat: v.alert.repeat, expiresAt: v.alert.expiresAt, channels: v.alert.channels, severity: v.alert.severity, status: v.status, statusDetail: v.statusDetail, fireCount: v.fireCount, lastFiredAt: v.lastFiredAt, nextAt: v.nextAt })) };
+    },
+  },
+  {
+    name: 'update_alert',
+    description: 'Change alerts by id: rename, enable/disable, new condition/level, repeat policy, expiry (ISO or null), channels, message, severity. rearm=true clears "already fired". Changing the condition re-arms it. One undoable batch.',
+    input: z.object({ updates: z.array(z.object({ id: z.string(), patch: AiAlertPatch, reason: Reason })).min(1).max(20) }),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx, input: { updates: { id: string; patch: z.infer<typeof AiAlertPatch> }[] }) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      for (const u of input.updates) {
+        if (!u.patch.condition) continue;
+        const bad = priceSanity(ctx, alertPrices(u.patch.condition)) ?? referenceIssue(u.patch.condition, ctx.store.list());
+        if (bad) return fail('invalid_input', bad);
+      }
+      const commandId = cid(ctx);
+      const ops = input.updates.map((u) => {
+        const { expiresAt, ...rest } = u.patch;
+        return { op: 'update' as const, id: u.id, patch: { ...rest, ...(expiresAt === undefined ? {} : { expiresAt: expiresAt === null ? null : Date.parse(expiresAt) }) } };
+      });
+      const r = await ctx.alerts.dispatch({ commandId, actor: 'ai', label: `AI updated ${ops.length} alert(s)`, ops });
+      return r.ok ? { ok: true, data: { commandId, updated: input.updates.map((u) => u.id) } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'delete_alert',
+    description: 'Delete alerts by id (one undoable batch).',
+    input: z.object({ ids: z.array(z.string()).min(1).max(20), reason: Reason }),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx, input: { ids: string[] }) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      const commandId = cid(ctx);
+      const r = await ctx.alerts.dispatch({ commandId, actor: 'ai', label: `AI deleted ${input.ids.length} alert(s)`, ops: input.ids.map((id) => ({ op: 'delete' as const, id })) });
+      return r.ok ? { ok: true, data: { commandId, deleted: input.ids } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'get_notifications',
+    description: 'Recent alert fires (newest first) with the reason and exact values the code used, plus what happened to each notification (sent, suppressed by quiet hours/throttle, failed) per channel.',
+    input: z.object({ limit: z.number().int().min(1).max(100).default(20) }),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx, input: { limit: number }) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      const snap = await ctx.alerts.snapshot();
+      const byId = new Map(snap.notifications.map((n) => [n.event.id, n]));
+      return { ok: true, data: snap.fires.slice(0, input.limit).map((f) => ({ at: f.at, kind: f.kind, alertId: f.alertId, alert: f.alertName, reason: f.reason, values: f.values, severity: f.severity, deliveries: f.notificationId ? (byId.get(f.notificationId)?.deliveries ?? []) : [] })) };
     },
   },
   {

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StyleSchema } from './drawing';
+import { NotificationSettingsSchema } from './notifications';
 
 /** Conservative starting values. All are user-editable. */
 export const RiskSettingsSchema = z.object({
@@ -63,6 +64,7 @@ export const AppConfigSchema = z.object({
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
   ai: AiSettingsSchema.default(() => AiSettingsSchema.parse({})),
+  notifications: NotificationSettingsSchema.default(() => NotificationSettingsSchema.parse({})),
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 export const DEFAULT_APP_CONFIG: AppConfig = AppConfigSchema.parse({});

@@ -260,8 +260,29 @@ Design spec mein ye sab define hoga (`design/` mein component spec alag file mei
 9. **Release:** Windows installer (CI), signed updates, backups, security review, live-account hardening.
 10. **SaaS foundations** (cloud gateway, local agent link, entitlements) jab personal version stable ho.
 
-## 19. Abhi ke open faisle
-1. Naam: "Aurum" theek hai ya aur options?
-2. Broker ka naam aur XAUUSD symbol (`XAUUSD`, `XAUUSDm`, `GOLD`).
-3. News/sentiment/calendar ke liye koi paid provider already hai?
-4. Daily-limit hit hone par existing positions ki default policy: sirf manage allowed, ya freeze?
+## 19. Faisle ho chuke (user se)
+| Sawal | Jawab | Asar |
+|---|---|---|
+| Naam | **Aurum** (working name, trademark baad mein check) | Branding ab isi par |
+| Symbol | **`GOLD`** (broker ka naam abhi nahi bataya) | Symbol mapping config mein: app ka `XAUUSD` ↔ broker ka `GOLD`. Contract specs MT5 se padhi jayengi |
+| News/sentiment provider | Abhi koi paid nahi, baad mein ho sakta hai | Phase 6 mein free/sample adapters, connector contract pehle se taake baad mein paid provider bina rewrite ke lag sake |
+| Daily limit par existing positions | Trader 50 se 100 pips SL rakhta hai | **Manage-only** (neeche) |
+
+### Daily loss limit policy (default)
+Aap ke wide SL (50 se 100 pips) ki wajah se "freeze" ya limit hit par auto-close ghalat hoga: SL ko jaldi mein market par band karna aap ke trade plan ko tod deta hai.
+- Limit hit hone par **naye orders block**, AI ke naye entries bhi block.
+- Existing positions par **manage-only**: SL/TP move, partial close, close allowed. Auto-close kabhi nahi, jab tak aap alag se "force flat" option on na karein.
+- SL ko position ka risk **barhane** wali taraf move karna (SL door karna) limit hit hone ke baad block.
+- Limit mein sirf realised loss ginein ya floating bhi, ye setting ho (default: realised + open risk dono dikhayen, block realised + worst-case open risk par).
+- Reset timezone aur reset time settings mein (default broker server time).
+
+### Pips ki definition (gold par confusion se bachne ke liye)
+Gold par "pip" brokers mein ek jaisa nahi. Aam taur par `GOLD` 2 decimals par hota hai (point = 0.01) aur 1 pip = 0.10, to 50 se 100 pips = **5 se 10 dollar** price move. App hamesha price distance aur pips dono dikhaye, aur pip size setting broker spec se auto-detect ho kar aap se confirm karwaye.
+
+### Risk engine ka asar (examples broker spec se confirm honge)
+Aam contract mein 1 lot = 100 oz, yani 1 lot par 1 dollar move = 100 dollar. To 5 se 10 dollar SL par 1 lot ka risk 500 se 1000 dollar banta hai. Isi liye lot hamesha risk % aur SL distance se nikalta hai (code), kabhi "andaze" se nahi, aur order se pehle dollar risk saaf dikhaya jata hai.
+
+## 20. Abhi ke open faisle
+1. Broker ka naam (symbol `GOLD` pata hai, broker nahi), aur account currency (USD?).
+2. Per-trade max risk % aur daily loss limit ki default values (main conservative defaults rakh sakta hoon, aap baad mein badal lein).
+3. Account type: pehle demo se shuru, theek?

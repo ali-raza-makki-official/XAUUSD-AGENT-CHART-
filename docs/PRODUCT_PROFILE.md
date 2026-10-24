@@ -84,6 +84,45 @@ Source: `WhatsApp Agent Platform — Developer manual v1 (Aug 25, 2026)`.
 - Allow-list: sirf creator ka account (platform ye khud enforce karta hai), phir bhi app mein alag toggle.
 - Token OS secure storage mein, kabhi chat ya log mein nahi.
 
+### 5b. WhatsApp ko proper Gateway banana
+WhatsApp ek **Gateway connector** hoga (`kind: messaging`), jo do kaam karta hai: notifications out, AI chat in/out. Desktop UI aur WhatsApp ek hi AI orchestrator aur ek hi command bus use karte hain, is liye dono jagah same tools, same permissions, same undo/audit.
+
+```
+WhatsApp  ⇄  Gateway (poller + sender queue)  ⇄  Session router  ⇄  AI orchestrator ⇄ tools
+                                  ▲                                     ▲
+                      Notification router  ◄── alerts / setup triggers / position events
+```
+
+**1. Notifications (out)**
+- Events: alert hit, setup triggered/invalidated, SL/TP hit, partial booked, feed disconnected/stale, session open (London/NY), high-impact news ka reminder, daily summary.
+- Har event type par priority, quiet hours, aur per-event on/off. Duplicate ya flood se bachne ke liye throttling (platform limit 12 msgs/min, is liye critical pehle, baqi batch mein).
+- Rich message: text + chart screenshot (PNG, 5 MB tak) + chhota "entry/SL/TP/RR" summary.
+
+**2. AI chat (in/out)**
+- Aap WhatsApp par likhein: "gold ka H1 analysis do", "mere open trades ka status", "NY session tak alert lagao". Message AI orchestrator ko jata hai, jawab text ya chart image ke taur par wapas.
+- Voice note (`audio/ogg`) aaye to transcribe ho kar command bane.
+- Aap ki bheji image (screenshot) AI ko supporting context mile.
+- WhatsApp conversation ka alag session context, lekin chart state aur drawings desktop wale hi.
+- Lambe jawab 4096 chars par split, ya PDF/document ke taur par.
+
+**3. Slash-style shortcuts** (AI ke baghair, fast, sasta): `/price`, `/positions`, `/alerts`, `/pause`, `/status`.
+
+**4. Permission levels WhatsApp par**
+| Level | Kya ho sakta hai |
+|---|---|
+| Notify only | Sirf alerts aayen |
+| Ask AI (default) | AI analysis, price, status, alert/level suggestions |
+| Chart control | AI drawings/alerts bana sakti hai (undoable) |
+| Trade actions | SL/TP modify, close, partial, sirf one-time code `CONFIRM 4821` ke baad, 2 min validity, aur desktop par bhi log |
+
+**5. Reliability**
+- Single poller (409 se bachne ke liye), `next_offset` SQLite mein save.
+- App restart par backlog padhna lekin purane messages par jawab ya trade action nahi (age limit + handled-id dedupe). Backlog ka sirf summary: "app band thi, ye 3 messages aaye the".
+- App band ho to WhatsApp gateway bhi band. 24/7 ke liye baad mein always-on server.
+- Outbound queue per recipient serial, retry/backoff PDF ke mutabiq. Trade-related message ka 500 par blind retry nahi.
+
+**Limit jo yaad rakhni hai:** platform agent ko sirf apne creator se baat karne deta hai, is liye ye aap ka personal gateway hai. SaaS mein har customer apna agent aur token connect karega.
+
 ## 6. SaaS ke liye abhi se rakhne wali baatein
 - **MT5 local hai.** SaaS mein ya to customer ke PC par chalne wala chhota "bridge agent" install hoga jo cloud se secure connection banaye, ya har tenant ke liye Windows VPS. Ye bara architecture faisla hai, abhi sirf design mein jagah rakhi hai.
 - **Storage abstraction:** SQLite abhi, baad mein Postgres. Tenant ID har table mein shuru se.

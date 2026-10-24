@@ -16,3 +16,4 @@ export * from './notifications';
 export * from './chartLayout';
 export * from './indicators';
 export * from './indicatorStore';
+export * from './orders';

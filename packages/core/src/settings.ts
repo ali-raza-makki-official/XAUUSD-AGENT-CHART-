@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { StyleSchema } from './drawing';
 
 /** Conservative starting values. All are user-editable. */
 export const RiskSettingsSchema = z.object({
@@ -42,6 +43,10 @@ export const AppConfigSchema = z.object({
   brokerSymbol: z.string().default('GOLD'),
   timeframe: z.enum(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']).default('M15'),
   pipSize: z.number().positive().default(0.1),
+  /** Per-tool default style overrides (colour, width, line style, fill), keyed by drawing kind. */
+  toolStyles: z.record(z.string(), StyleSchema.partial()).default({}),
+  magnet: z.boolean().default(true),
+  stayInTool: z.boolean().default(false),
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
 });

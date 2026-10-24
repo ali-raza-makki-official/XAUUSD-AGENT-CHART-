@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { DrawingSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
+import { closeDb, loadDrawings, persist } from './db';
 import { IPC } from '../shared';
 
 let config: AppConfig;
@@ -49,7 +51,14 @@ function registerIpc(): void {
   ipcMain.handle(IPC.getConfig, () => config);
   ipcMain.handle(IPC.setConfig, async (_e, patch: unknown) => {
     const allowed = z
-      .object({ brokerSymbol: z.string().min(1).max(32), pipSize: z.number().positive(), timeframe: TimeframeSchema })
+      .object({
+        brokerSymbol: z.string().min(1).max(32),
+        pipSize: z.number().positive(),
+        timeframe: TimeframeSchema,
+        toolStyles: z.record(z.string(), StyleSchema.partial()),
+        magnet: z.boolean(),
+        stayInTool: z.boolean(),
+      })
       .partial()
       .parse(patch);
     const symbolChanged = allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol;
@@ -61,6 +70,18 @@ function registerIpc(): void {
     bridge.candles(TimeframeSchema.parse(tf), z.number().int().min(1).max(5000).parse(count)),
   );
   ipcMain.handle(IPC.findSymbols, (_e, q: unknown) => bridge.findSymbols(z.string().max(64).parse(q)));
+  ipcMain.handle(IPC.symbolSpec, () => bridge.symbolSpec());
+  ipcMain.handle(IPC.loadDrawings, (_e, symbol: unknown) => loadDrawings(z.string().min(1).max(32).parse(symbol)));
+  ipcMain.handle(IPC.persistDrawings, (_e, raw: unknown) => {
+    const p = z
+      .object({
+        symbol: z.string().min(1).max(32),
+        log: z.object({ commandId: z.string().min(8), actor: z.enum(['manual', 'ai']), kind: z.enum(['do', 'undo', 'redo']), label: z.string().max(200) }),
+        changes: z.array(z.object({ id: z.string().min(1), after: DrawingSchema.nullable() })).max(500),
+      })
+      .parse(raw);
+    persist(p);
+  });
   ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol));
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
   bridge.on('tick', (t) => send(IPC.tick, t));
@@ -87,5 +108,8 @@ else {
     await bridge.start(config.brokerSymbol);
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => void bridge.stop());
+  app.on('before-quit', () => {
+    void bridge.stop();
+    closeDb();
+  });
 }

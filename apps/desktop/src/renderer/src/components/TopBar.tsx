@@ -17,10 +17,11 @@ interface Props {
   tick: Tick | null;
   status: FeedStatus;
   account: AccountInfo | null;
+  saveError: string | null;
   onSettings: () => void;
 }
 
-export function TopBar({ config, tf, onTf, tick, status, account, onSettings }: Props) {
+export function TopBar({ config, tf, onTf, tick, status, account, saveError, onSettings }: Props) {
   const st = STATUS[status.state];
   const pip = config?.pipSize ?? 0.1;
   return (
@@ -51,6 +52,7 @@ export function TopBar({ config, tf, onTf, tick, status, account, onSettings }: 
       ) : (
         <span className="chip info">No account</span>
       )}
+      {saveError && <span className="chip err" title={saveError}>✕ Save failed</span>}
       <span className={`chip ${st.cls}`} title={status.message}><span aria-hidden="true">{st.icon}</span>{st.text}</span>
       <button className="btn stop" disabled title="Stops new AI actions. Nothing is running yet.">Stop AI actions</button>
       <button className="btn" onClick={onSettings}>Settings</button>

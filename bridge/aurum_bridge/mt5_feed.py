@@ -114,6 +114,8 @@ class Mt5Feed:
                 "currency": str(info.currency),
                 "demo": bool(demo),
                 "name": str(getattr(info, "name", "")) or None,
+                "balance": float(info.balance),
+                "equity": float(info.equity),
             }
 
     def tick(self) -> dict:

@@ -3,7 +3,7 @@ import type { LogLine } from '../hooks';
 
 export function ChatPanel() {
   return (
-    <aside className="chat" aria-label="AI chat">
+    <div className="chat" aria-label="AI chat" style={{ height: '100%' }}>
       <div className="panel-h">AI assistant <span className="chip info">not connected</span></div>
       <div className="body">
         <p>The AI assistant is not connected yet. Once a provider is added in Settings, it will read this chart and its drawings and answer here.</p>
@@ -12,7 +12,7 @@ export function ChatPanel() {
         <textarea rows={2} disabled placeholder="Connect an AI provider to start" aria-label="Message" />
         <button className="btn primary" disabled>Send</button>
       </div>
-    </aside>
+    </div>
   );
 }
 

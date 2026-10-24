@@ -18,7 +18,7 @@ button { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-.app { display: grid; height: 100%; grid-template-rows: 40px 1fr auto; grid-template-columns: 44px 1fr var(--chat-w, 340px); background: var(--border); gap: 1px; }
+.app { display: grid; height: 100%; grid-template-rows: 40px 1fr auto; grid-template-columns: 44px 1fr var(--chat-w, 360px); background: var(--border); gap: 1px; }
 .app > * { background: var(--bg-panel); min-width: 0; min-height: 0; }
 .topbar { grid-column: 1 / 4; display: flex; align-items: center; gap: 14px; padding: 0 12px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .02em; }
@@ -81,3 +81,42 @@ button { font: inherit; color: inherit; }
 .field .hint { color: var(--t3); font-size: 12px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* drawing UI */
+.tool-sep { width: 22px; height: 1px; background: var(--border); margin: 4px 0; }
+.rightcol { display: flex; flex-direction: column; min-height: 0; }
+.rtabs { display: flex; border-bottom: 1px solid var(--border); }
+.rtab { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 6px; cursor: pointer; color: var(--t2); }
+.rtab[aria-selected='true'] { color: var(--t1); border-bottom-color: var(--gold); }
+.rbody { flex: 1; min-height: 0; overflow: auto; }
+.rbody .chat { height: 100%; }
+.inspector, .objects { padding: 10px 12px; display: grid; gap: 6px; align-content: start; }
+.ihead { display: flex; align-items: center; gap: 8px; text-transform: capitalize; }
+.ibtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.ifs { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; min-width: 0; }
+.ifs:disabled { opacity: .6; }
+.isub { margin-top: 8px; color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.irow { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
+.irow.tp { grid-template-columns: 34px 1fr 1fr auto auto; }
+.ilabel { color: var(--t2); font-size: 12px; }
+.ictl { min-width: 0; }
+.inspector input:not([type='checkbox']):not([type='color']), .inspector select, .inspector textarea, .field select { width: 100%; background: var(--bg-raised); color: var(--t1); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px 6px; font: inherit; min-width: 0; }
+.inspector input[type='color'] { width: 44px; height: 26px; padding: 0; background: none; border: 1px solid var(--border-strong); border-radius: var(--r-sm); }
+.tfchecks { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.tfchecks label { display: inline-flex; gap: 4px; align-items: center; color: var(--t2); }
+.calc { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px; display: grid; gap: 2px; }
+.warn { color: var(--warn); }
+.hint { color: var(--t3); font-size: 12px; }
+.reason { margin: 0; color: var(--t2); background: var(--bg-raised); border-left: 2px solid var(--ai); padding: 6px 8px; border-radius: var(--r-xs); }
+.olist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.olist li { display: grid; grid-template-columns: 1fr auto auto auto; gap: 4px; align-items: center; border: 1px solid transparent; border-radius: var(--r-sm); }
+.olist li.sel { border-color: var(--gold-dim); background: var(--bg-raised); }
+.orow { display: flex; gap: 8px; align-items: center; background: transparent; border: 0; padding: 4px; cursor: pointer; text-align: left; min-width: 0; }
+.oname { text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confirm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border: 1px solid var(--sell); border-radius: var(--r-sm); padding: 8px; }
+.dialog table { width: 100%; border-collapse: collapse; }
+.dialog td, .dialog th { padding: 3px 4px; text-align: left; font-weight: 400; }
+.dialog th { color: var(--t3); font-size: 11px; }
+.dialog td input, .dialog td select { width: 100%; background: var(--bg-raised); color: var(--t1); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 3px 5px; font: inherit; }
+.dialog td input[type='color'] { padding: 0; height: 24px; }
+.dialog .scroll { max-height: 46vh; overflow: auto; }

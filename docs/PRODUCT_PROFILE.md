@@ -286,3 +286,26 @@ Aam contract mein 1 lot = 100 oz, yani 1 lot par 1 dollar move = 100 dollar. To 
 1. Broker ka naam (symbol `GOLD` pata hai, broker nahi), aur account currency (USD?).
 2. Per-trade max risk % aur daily loss limit ki default values (main conservative defaults rakh sakta hoon, aap baad mein badal lein).
 3. Account type: pehle demo se shuru, theek?
+
+## 21. Parity rule: har kaam manual bhi aur AI se bhi
+Jo cheez aap haath se kar sakein, AI bhi wahi kar sake, aur jo AI kare aap usay dekh, badal aur undo kar sakein.
+- Ek hi drawing model aur ek hi `DrawingStore`/command bus. Manual tool aur AI tool dono usi se guzarte hain.
+- Har feature ke do raste: UI control aur AI tool (validated schema). Naya feature tab tak complete nahi jab dono maujood hon.
+- AI ke paas data: candles, indicators, drawings, selected object, account/spec, aur (baad mein) news/sentiment/sessions connectors.
+- Har setting customisable: tool defaults, har drawing ki style, timeframe visibility, fib levels, TP ladder, risk %.
+
+## 22. Build status (kya bana hai, kya baqi)
+| Hissa | Halat |
+|---|---|
+| Electron app, layout, tokens | Bana, asli Electron mein chala kar check kiya |
+| MT5 bridge (candles, tick, account, symbol spec) | Bana. Asli MT5 par abhi test nahi hua (yahan Linux hai). Test-only stand-in se pipeline check hui |
+| Drawing tools (10 kinds), inspector, objects/layers, undo/redo, SQLite save | Bana, e2e check hua (draw, select, undo, restart) |
+| Risk maths (lots from risk %) | Bana, unit tests |
+| AI tool layer + permissions | Bana, unit tests. LLM se abhi connected nahi |
+| LLM provider adapters + chat | Baqi (agla) |
+| Indicators, multi-timeframe layouts | Baqi |
+| Alerts, schedules, notifications, WhatsApp gateway | Baqi |
+| News/calendar/sentiment/sessions connectors | Baqi |
+| Order placement, SL/TP modify, partial/close (MT5) | Baqi, risk engine aur state machine ke baad |
+| Windows installer | Baqi |
+

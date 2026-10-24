@@ -40,9 +40,24 @@ export const AccountInfoSchema = z.object({
   server: z.string(),
   currency: z.string(),
   demo: z.boolean(),
-  name: z.string().optional(),
+  name: z.string().nullish(),
+  balance: z.number().optional(),
+  equity: z.number().optional(),
 });
 export type AccountInfo = z.infer<typeof AccountInfoSchema>;
+
+export const SymbolSpecSchema = z.object({
+  symbol: z.string(),
+  digits: z.number().int(),
+  point: z.number(),
+  contractSize: z.number(),
+  tickSize: z.number(),
+  tickValue: z.number(),
+  volumeMin: z.number(),
+  volumeMax: z.number(),
+  volumeStep: z.number(),
+});
+export type SymbolSpec = z.infer<typeof SymbolSpecSchema>;
 
 export const CandlesResponseSchema = z.object({
   symbol: z.string(),

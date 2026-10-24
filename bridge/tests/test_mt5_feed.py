@@ -22,7 +22,7 @@ class FakeMt5:
         return NS(connected=True)
 
     def account_info(self):
-        return NS(login=123, server="Exness-MT5Trial", currency="USD", name="T", trade_mode=0 if self.demo else 2)
+        return NS(login=123, server="Exness-MT5Trial", currency="USD", name="T", balance=10000.0, equity=9990.5, trade_mode=0 if self.demo else 2)
 
     def symbol_info(self, s):
         return NS(digits=2, point=0.01, trade_contract_size=100.0, trade_tick_size=0.01,
@@ -55,6 +55,10 @@ class Mt5FeedTest(unittest.TestCase):
     def test_demo_flag(self):
         self.assertTrue(Mt5Feed("GOLD", mt5_module=FakeMt5(demo=True)).account()["demo"])
         self.assertFalse(Mt5Feed("GOLD", mt5_module=FakeMt5(demo=False)).account()["demo"])
+
+    def test_account_has_balance_and_equity(self):
+        a = Mt5Feed("GOLD", mt5_module=FakeMt5()).account()
+        self.assertEqual((a["balance"], a["equity"]), (10000.0, 9990.5))
 
     def test_unknown_symbol_is_a_clear_error(self):
         with self.assertRaises(FeedError) as cm:

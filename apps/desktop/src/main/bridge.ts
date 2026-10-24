@@ -8,10 +8,12 @@ import { EventEmitter } from 'node:events';
 import {
   AccountInfoSchema,
   CandlesResponseSchema,
+  SymbolSpecSchema,
   STALE_AFTER_SECONDS,
   TickSchema,
   type AccountInfo,
   type Candle,
+  type SymbolSpec,
   type FeedStatus,
   type Tick,
   type Timeframe,
@@ -51,6 +53,7 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   private timer: NodeJS.Timeout | null = null;
   private accountTimer: NodeJS.Timeout | null = null;
   private generation = 0;
+  private lastAccountTry = 0;
   private lastTickTime = 0;
   private lastTickChangeAt = 0;
   status: FeedStatus = { state: 'starting' };
@@ -131,6 +134,8 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
       }
       this.lastTick = tick;
       this.emit('tick', tick);
+      // The first account poll can run before the bridge is up, so retry quickly until we have one.
+      if (!this.account && Date.now() - this.lastAccountTry > 1000) void this.pollAccount(gen);
       const quietFor = (Date.now() - this.lastTickChangeAt) / 1000;
       if (quietFor > STALE_AFTER_SECONDS) {
         this.setStatus({ state: 'stale', message: `No new tick for ${Math.round(quietFor)}s (market may be closed)` });
@@ -147,13 +152,15 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   }
 
   private async pollAccount(gen: number): Promise<void> {
+    this.lastAccountTry = Date.now();
     try {
       const acc = AccountInfoSchema.parse(await this.get('/account'));
       if (gen !== this.generation) return;
       this.account = acc;
       this.emit('account', acc);
-    } catch {
+    } catch (e) {
       if (gen !== this.generation) return;
+      console.error('[bridge] account poll failed:', e instanceof Error ? e.message : e);
       if (this.account) {
         this.account = null;
         this.emit('account', null);
@@ -164,6 +171,10 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   async candles(tf: Timeframe, count: number): Promise<Candle[]> {
     const data = CandlesResponseSchema.parse(await this.get(`/candles?tf=${tf}&count=${count}`));
     return data.candles;
+  }
+
+  async symbolSpec(): Promise<SymbolSpec> {
+    return SymbolSpecSchema.parse(await this.get('/symbol'));
   }
 
   async findSymbols(query: string): Promise<string[]> {

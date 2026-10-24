@@ -1,13 +1,16 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { AiPermissionsSchema, AiSettingsSchema, DrawingSchema, PROVIDER_IDS, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
+import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
 import { closeDb, loadChat, loadDrawings, persist, saveChat } from './db';
 import * as llm from './llm';
 import { clearKey, hasKey, secureStorageAvailable, setKey } from './secrets';
+import { initAutoUpdate } from './updater';
 import { IPC } from '../shared';
 
 let config: AppConfig;
@@ -32,6 +35,9 @@ function createWindow(): void {
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
+      devTools: !app.isPackaged, // no DevTools / inspector in the shipped app
+      webviewTag: false,
+      allowRunningInsecureContent: false,
     },
   });
   win.once('ready-to-show', () => win?.show());
@@ -41,8 +47,9 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(process.env.ELECTRON_RENDERER_URL ?? 'file://')) e.preventDefault();
+    if (!url.startsWith(process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(join(__dirname, '../renderer/')).href)) e.preventDefault();
   });
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(join(__dirname, '../renderer/index.html'));
 }
@@ -115,6 +122,9 @@ function registerIpc(): void {
   bridge.on('account', (a) => send(IPC.account, a));
 }
 
+// A shipped build must not expose Chromium's remote debugging endpoint (it would hand the renderer and IPC to any local process).
+if (app.isPackaged && (app.commandLine.hasSwitch('remote-debugging-port') || app.commandLine.hasSwitch('remote-debugging-pipe'))) app.exit(1);
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 else {
@@ -126,11 +136,17 @@ else {
   });
   void app.whenReady().then(async () => {
     config = loadConfig();
+    if (app.isPackaged) Menu.setApplicationMenu(null); // no default menu: it carries reload / DevTools entries
+    // The app needs no browser permissions (camera, mic, geolocation, notifications...): deny every request.
+    session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
     session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
       cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [CSP] } });
     });
     registerIpc();
     createWindow();
+    startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
+    void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
     await bridge.start(config.brokerSymbol);
   });
   app.on('window-all-closed', () => app.quit());

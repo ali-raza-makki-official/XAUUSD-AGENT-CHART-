@@ -6,3 +6,7 @@ __pycache__/
 .venv/
 .DS_Store
 apps/desktop/out/
+apps/desktop/release/
+apps/desktop/resources/bridge/
+bridge/build/
+*.spec

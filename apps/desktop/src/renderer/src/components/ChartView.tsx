@@ -5,9 +5,11 @@ import {
 } from 'lightweight-charts';
 import {
   applyTick, handleAt, handlePatch, hitDistance, isShownOn, layoutDrawing, makeDrawing, translatePatch,
-  type Candle, type Drawing, type DrawingOp, type DrawingStore, type Point, type Style, type Tick, type Timeframe,
+  type Candle, type Drawing, type DrawingOp, type DrawingStore, type Indicator, type Point, type Style, type Tick, type Timeframe,
 } from '@aurum/core';
 import { ChartMapper } from '../lib/mapper';
+import { IndicatorLayer } from '../lib/indicatorLayer';
+import type { ChartSync } from '../lib/chartSync';
 import { DrawingsPrimitive, type Scene } from '../lib/primitive';
 import { toolById, type ToolId } from '../lib/tools';
 
@@ -33,6 +35,27 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null, open?: boolean) => void;
   dispatch: (ops: DrawingOp[], label: string) => unknown;
+  /** Multi-chart: which pane this is, whether it receives drawing input/keys, and how to become the active pane. */
+  paneId?: number;
+  active?: boolean;
+  onActivate?: () => void;
+  /** Undo/redo across drawings and indicators; defaults to the drawing store only. */
+  onUndo?: () => void;
+  onRedo?: () => void;
+  /** Indicator instances (shared by all panes; filtered per pane timeframe). */
+  indicators?: Indicator[];
+  /** Crosshair/scroll link to the other panes. */
+  sync?: ChartSync;
+}
+
+/** Index of the candle containing `time` (last candle at or before it). */
+function candleAt(candles: Candle[], time: number): number {
+  let lo = 0, hi = candles.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid]!.time <= time) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans;
 }
 
 type Drag = { mode: 'move' | 'handle'; id: string; key?: string; start: Point; startPx: [number, number]; original: Drawing; moved: boolean };
@@ -44,6 +67,8 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
   const prim = useRef<DrawingsPrimitive | null>(null);
   const mapper = useRef<ChartMapper | null>(null);
   const bidLine = useRef<IPriceLine | null>(null);
+  const indLayer = useRef<IndicatorLayer | null>(null);
+  const quiet = useRef({ cross: 0, range: 0 }); // ignore our own echo for a moment after applying a remote update
   const last = useRef<Candle | null>(null);
   const p = useRef(props);
   p.current = props;
@@ -98,7 +123,50 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     s.attachPrimitive(pr);
     chart.current = c; series.current = s; prim.current = pr;
     mapper.current = new ChartMapper(c, s, [], p.current.tf, p.current.pipSize);
-    return () => { c.remove(); chart.current = series.current = prim.current = mapper.current = bidLine.current = null; };
+    indLayer.current = new IndicatorLayer(c);
+
+    // Link to the other panes by time (they may have different timeframes).
+    const paneId = p.current.paneId ?? 0;
+    const onCross = (param: { point?: { x: number; y: number }; time?: unknown; paneIndex?: number }) => {
+      if (performance.now() < quiet.current.cross) return;
+      const bus = p.current.sync;
+      if (!bus) return;
+      if (!param.point || param.time === undefined) { bus.crosshair(paneId, null, null); return; }
+      const onPrice = param.paneIndex === undefined || param.paneIndex === 0;
+      bus.crosshair(paneId, param.time as number, onPrice ? s.coordinateToPrice(param.point.y) : null);
+    };
+    const onRange = (r: { from: number; to: number } | null) => {
+      if (!r || performance.now() < quiet.current.range) return;
+      const m = mapper.current;
+      if (!m || !m.candles.length) return;
+      p.current.sync?.range(paneId, m.logicalToTime(r.from), m.logicalToTime(r.to));
+    };
+    c.subscribeCrosshairMove(onCross as never);
+    c.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    const unregister = p.current.sync?.register(paneId, {
+      crosshair(time, price) {
+        const m = mapper.current;
+        if (!m) return;
+        quiet.current.cross = performance.now() + 60;
+        const i = time === null ? -1 : candleAt(m.candles, time);
+        const k = m.candles[i];
+        if (!k) { c.clearCrosshairPosition(); return; }
+        c.setCrosshairPosition(price ?? k.close, k.time as UTCTimestamp, s);
+      },
+      range(fromTime, toTime) {
+        const m = mapper.current;
+        if (!m || !m.candles.length) return;
+        quiet.current.range = performance.now() + 150;
+        c.timeScale().setVisibleLogicalRange({ from: m.timeToLogical(fromTime), to: m.timeToLogical(toTime) } as never);
+      },
+    });
+    return () => {
+      unregister?.();
+      c.unsubscribeCrosshairMove(onCross as never);
+      c.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
+      c.remove();
+      chart.current = series.current = prim.current = mapper.current = bidLine.current = indLayer.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,8 +176,22 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     last.current = props.candles[props.candles.length - 1] ?? null;
     mapper.current.candles = props.candles.slice();
     if (props.candles.length) chart.current?.timeScale().scrollToRealTime();
+    indLayer.current?.sync(props.indicators ?? [], props.tf, props.candles);
     redraw();
   }, [props.candles]);
+
+  // Indicator instances or this pane's timeframe changed: rebuild only the series that differ.
+  useEffect(() => {
+    if (!mapper.current) return;
+    indLayer.current?.sync(props.indicators ?? [], props.tf, mapper.current.candles);
+    redraw();
+  }, [props.indicators, props.tf]);
+
+  // Another pane was activated: abandon any half-drawn shape here.
+  useEffect(() => {
+    if (props.active ?? true) return;
+    pending.current = []; preview.current = null; drag.current = null; redraw();
+  }, [props.active]);
 
   useEffect(() => {
     if (mapper.current) { mapper.current.tf = props.tf; mapper.current.pipSize = props.pipSize; }
@@ -126,6 +208,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       series.current.update(toBar(bar));
       if (bar.time !== prev.time) mapper.current.candles.push(bar); else mapper.current.candles[mapper.current.candles.length - 1] = bar;
       last.current = bar;
+      indLayer.current?.updateLast(mapper.current.candles);
     }
     if (bidLine.current) bidLine.current.applyOptions({ price: t.bid });
     else bidLine.current = series.current.createPriceLine({ price: t.bid, color: css('--t3'), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'bid' });
@@ -159,6 +242,12 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       if (!inPane(x, y)) return;
       const { tool, magnet } = p.current;
       const pt = mapper.current.pointAt(x, y, magnet);
+
+      // Only the active pane receives drawing input; the first click on another pane just makes it active.
+      if (!(p.current.active ?? true)) {
+        p.current.onActivate?.();
+        if (tool !== 'cursor') { e.stopPropagation(); return; }
+      }
 
       if (tool !== 'cursor') {
         e.stopPropagation();
@@ -205,6 +294,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       const [x, y] = local(e);
       const { tool, magnet } = p.current;
       if (tool !== 'cursor') {
+        if (!(p.current.active ?? true)) { hover.current.pt = null; el.style.cursor = ''; return; }
         hover.current.pt = inPane(x, y) ? mapper.current.pointAt(x, y, magnet) : null;
         el.style.cursor = 'crosshair';
         if (pending.current.length) redraw();
@@ -252,10 +342,11 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (!(p.current.active ?? true)) return; // keys belong to the active pane only, so undo never runs twice
       const mod = e.ctrlKey || e.metaKey;
       if (e.key === 'Escape') { pending.current = []; preview.current = null; p.current.onTool('cursor'); p.current.onSelect(null); redraw(); return; }
-      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); p.current.store.undo(); return; }
-      if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); p.current.store.redo(); return; }
+      if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); (p.current.onUndo ?? (() => p.current.store.undo()))(); return; }
+      if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); (p.current.onRedo ?? (() => p.current.store.redo()))(); return; }
       const sel = p.current.drawings.find((d) => d.id === p.current.selectedId);
       if (sel && (e.key === 'Delete' || e.key === 'Backspace') && !sel.locked) { p.current.dispatch([{ op: 'delete', id: sel.id }], 'Delete drawing'); p.current.onSelect(null); return; }
       if (sel && mod && e.key.toLowerCase() === 'd') {

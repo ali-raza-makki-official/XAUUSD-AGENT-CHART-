@@ -2,12 +2,12 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { AiPermissionsSchema, AiSettingsSchema, DrawingSchema, PROVIDER_IDS, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
-import { closeDb, loadChat, loadDrawings, persist, saveChat } from './db';
+import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
 import { clearKey, hasKey, secureStorageAvailable, setKey } from './secrets';
 import { initAutoUpdate } from './updater';
@@ -69,6 +69,9 @@ function registerIpc(): void {
         stayInTool: z.boolean(),
         aiPermissions: AiPermissionsSchema,
         ai: AiSettingsSchema,
+        layout: ChartLayoutSchema,
+        paneTimeframes: PaneTimeframesSchema,
+        syncScroll: z.boolean(),
       })
       .partial()
       .parse(patch);
@@ -92,6 +95,17 @@ function registerIpc(): void {
       })
       .parse(raw);
     persist(p);
+  });
+  ipcMain.handle(IPC.loadIndicators, (_e, symbol: unknown) => loadIndicators(z.string().min(1).max(32).parse(symbol)));
+  ipcMain.handle(IPC.persistIndicators, (_e, raw: unknown) => {
+    const p = z
+      .object({
+        symbol: z.string().min(1).max(32),
+        log: z.object({ commandId: z.string().min(8), actor: z.enum(['manual', 'ai']), kind: z.enum(['do', 'undo', 'redo']), label: z.string().max(200) }),
+        changes: z.array(z.object({ id: z.string().min(1), after: IndicatorSchema.nullable() })).max(500),
+      })
+      .parse(raw);
+    persistIndicators(p);
   });
   const provider = (v: unknown) => ProviderIdSchema.parse(v);
   ipcMain.handle(IPC.aiStatus, () => ({

@@ -11,6 +11,7 @@ import { IndicatorStore, IndicatorSchema, makeIndicator, indicatorTitle, outputS
 import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValues, warmupBars, type IndicatorType } from './indicators';
 import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
+import { ORDER_TOOLS, type OrdersPort } from './orderTools';
 
 /**
  * The only way the AI touches the app. Every tool validates its input with Zod, checks the capability
@@ -126,6 +127,8 @@ export interface ToolContext {
   now?: () => number;
   /** Market context (sessions, calendar, news, sentiment, related markets). Absent = tools report unavailable. */
   context?: ContextAccess;
+  /** Order previews (propose_order_action). Absent = the tool reports unavailable. */
+  orders?: OrdersPort;
 }
 
 export interface AlertsPort {
@@ -590,7 +593,7 @@ export const AI_TOOLS: AiTool[] = [
   },
 ];
 
-AI_TOOLS.push(...CONTEXT_TOOLS);
+AI_TOOLS.push(...CONTEXT_TOOLS, ...ORDER_TOOLS);
 
 export function runAiTool(ctx: ToolContext, name: string, rawInput: unknown): Promise<ToolResult> | ToolResult {
   const tool = AI_TOOLS.find((t) => t.name === name);

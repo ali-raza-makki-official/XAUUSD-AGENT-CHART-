@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StyleSchema } from './drawing';
+import { ChartLayoutSchema, DEFAULT_PANE_TIMEFRAMES, PaneTimeframesSchema } from './chartLayout';
 
 /** Conservative starting values. All are user-editable. */
 export const RiskSettingsSchema = z.object({
@@ -40,6 +41,10 @@ export const OrderMode = z.enum(['suggest', 'confirm', 'automatic']);
 export const AiPermissionsSchema = z.object({
   chartRead: z.boolean().default(true),
   drawingsEdit: z.boolean().default(false),
+  /** Add, change and remove indicators (a view setting, but it changes what the user sees, so it is opt-in). */
+  indicatorsEdit: z.boolean().default(false),
+  /** Change chart layout and pane timeframes (set_layout, set_timeframe). View state only; never touches drawings or orders. */
+  chartControl: z.boolean().default(false),
   alertsAndSetups: z.boolean().default(false),
   orders: OrderMode.default('suggest'),
   sltpAndPartialClose: z.boolean().default(false),
@@ -56,6 +61,12 @@ export const AppConfigSchema = z.object({
   brokerSymbol: z.string().default('GOLD'),
   timeframe: z.enum(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']).default('M15'),
   pipSize: z.number().positive().default(0.1),
+  /** Chart workspace: single, two side by side, or 2x2. `timeframe` above is the single-chart timeframe. */
+  layout: ChartLayoutSchema.default('single'),
+  /** Timeframe per pane for the multi-chart layouts (H4/H1/M15/M5 by default). */
+  paneTimeframes: PaneTimeframesSchema.default(() => [...DEFAULT_PANE_TIMEFRAMES]),
+  /** Scroll/zoom all panes together. The crosshair is always synced. */
+  syncScroll: z.boolean().default(false),
   /** Per-tool default style overrides (colour, width, line style, fill), keyed by drawing kind. */
   toolStyles: z.record(z.string(), StyleSchema.partial()).default({}),
   magnet: z.boolean().default(true),

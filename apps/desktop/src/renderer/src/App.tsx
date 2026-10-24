@@ -1,30 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { translatePatch, type Drawing, type DrawingOp, type SymbolSpec, type Timeframe } from '@aurum/core';
-import { useCandles, useFeed } from './hooks';
+import { translatePatch, paneTimeframes, withLayout, withPaneTimeframe, undoNewest, redoOldest, DEFAULT_PANE_TIMEFRAMES, LAYOUT_PANES, type ChartLayout, type Drawing, type DrawingOp, type SymbolSpec, type Timeframe } from '@aurum/core';
+import { useFeed } from './hooks';
+import { useIndicators } from './useIndicators';
+import { ChartGrid } from './components/ChartGrid';
+import { LayoutBar } from './components/LayoutBar';
+import { IndicatorsDialog, IndicatorsPanel } from './components/Indicators';
+import { ChartSync } from './lib/chartSync';
 import { useDrawings } from './useDrawings';
 import { TopBar } from './components/TopBar';
-import { ChartView } from './components/ChartView';
 import { BottomPanel, ChatPanel } from './components/Panels';
 import { SettingsDialog } from './components/Settings';
 import { Toolbar } from './components/Toolbar';
-import { Bot, Layers, SlidersHorizontal, Unplug, LoaderCircle, Monitor } from 'lucide-react';
+import { Activity, Bot, Layers, SlidersHorizontal } from 'lucide-react';
 import { Inspector, InspectorEmpty } from './components/Inspector';
-import { Button } from './components/ui';
 import { ObjectsPanel } from './components/Objects';
 import type { ToolId } from './lib/tools';
 
-type RightTab = 'chat' | 'objects' | 'inspector';
+type RightTab = 'chat' | 'objects' | 'inspector' | 'indicators';
 
 export function App() {
   const { api, config, status, tick, account, log, update } = useFeed();
-  const [tfOverride, setTf] = useState<Timeframe | null>(null);
-  const tf: Timeframe = tfOverride ?? config?.timeframe ?? 'M15';
+  const layout: ChartLayout = config?.layout ?? 'single';
+  const layoutCfg = { layout, timeframe: config?.timeframe ?? 'M15', paneTimeframes: config?.paneTimeframes ?? [...DEFAULT_PANE_TIMEFRAMES] };
+  const tfs = paneTimeframes(layoutCfg);
+  const [activeRaw, setActive] = useState(0);
+  const activePane = Math.min(activeRaw, LAYOUT_PANES[layout] - 1);
+  const tf: Timeframe = tfs[activePane] ?? 'M15';
   const live = status.state === 'connected' || status.state === 'stale';
-  const { candles, error, loading } = useCandles(tf, live);
+  const sync = useMemo(() => new ChartSync(), []);
+  sync.scroll = (config?.syncScroll ?? false) && layout !== 'single';
+  const [indDialog, setIndDialog] = useState(false);
+  const [selectedInd, setSelectedInd] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
 
   const symbol = config?.symbol ?? 'XAUUSD';
   const { store, drawings, dispatch, canUndo, canRedo, saveError } = useDrawings(api, symbol);
+  const ind = useIndicators(api, symbol);
+  const undo = () => undoNewest([store, ind.store]);
+  const redo = () => redoOldest([store, ind.store]);
   const [tool, setTool] = useState<ToolId>('cursor');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>('chat');
@@ -45,7 +58,9 @@ export function App() {
     wasSelected.current = !!selected;
   }, [selected, selectedId, rightTab]);
 
-  const pickTf = (t: Timeframe) => { setTf(t); void update({ timeframe: t }); };
+  const pickTf = (t: Timeframe) => { void update(withPaneTimeframe(layoutCfg, activePane, t)); };
+  const setLayout = (l: ChartLayout) => { void update(withLayout(layoutCfg, l)); };
+  const addIndicator = (t: Parameters<typeof ind.add>[0]) => { const i = ind.add(t); setIndDialog(false); if (i) { setSelectedInd(i.id); setRightTab('indicators'); } };
   const select = (id: string | null) => { setSelectedId(id); if (id) setRightTab('inspector'); };
   const patch = (id: string, p: Record<string, unknown>, label: string) => dispatch([{ op: 'update', id, patch: p }], label);
   const remove = (id: string) => { dispatch([{ op: 'delete', id }], 'Delete drawing'); if (id === selectedId) setSelectedId(null); };
@@ -67,48 +82,32 @@ export function App() {
       <TopBar config={config} tf={tf} onTf={pickTf} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings(true)} />
       <Toolbar
         tool={tool} onTool={setTool}
-        canUndo={canUndo} canRedo={canRedo} onUndo={() => store.undo()} onRedo={() => store.redo()}
+        canUndo={canUndo || ind.store.canUndo} canRedo={canRedo || ind.store.canRedo} onUndo={undo} onRedo={redo}
         magnet={config?.magnet ?? true} onMagnet={() => void update({ magnet: !(config?.magnet ?? true) })}
         stayInTool={config?.stayInTool ?? false} onStay={() => void update({ stayInTool: !(config?.stayInTool ?? false) })}
       />
       <main className="chartwrap">
-        <ChartView
-          candles={candles} tick={tick} tf={tf} pipSize={pipSize}
-          store={store} drawings={drawings} hiddenLayers={hiddenLayers}
-          tool={tool} onTool={setTool} stayInTool={config?.stayInTool ?? false} magnet={config?.magnet ?? true}
-          toolStyles={config?.toolStyles ?? {}} selectedId={selectedId} onSelect={(id, open) => { select(id); if (open) setRightTab('inspector'); }}
-          dispatch={dispatch}
+        <LayoutBar
+          layout={layout} onLayout={setLayout} syncScroll={config?.syncScroll ?? false} onSync={() => void update({ syncScroll: !(config?.syncScroll ?? false) })}
+          activePane={activePane} activeTf={tf} indicatorCount={ind.indicators.length} onIndicators={() => setIndDialog(true)}
         />
-        {!api && (
-          <div className="overlay"><div className="state"><span className="state-ic"><Monitor size={20} /></span><h2>Open the Aurum desktop app</h2><p>This page is not running inside Aurum, so there is no MT5 connection and no market data.</p></div></div>
-        )}
-        {api && !candles.length && (
-          <div className="overlay">
-            <div className="state">
-              <span className="state-ic">{live || status.state === 'starting' ? <LoaderCircle size={20} className="spin" /> : <Unplug size={20} />}</span>
-              <h2>{live ? (loading ? 'Loading candles…' : 'No candles received') : status.state === 'starting' ? 'Connecting to MT5…' : 'MT5 is not connected'}</h2>
-              {!live && status.state !== 'starting' && (
-                <>
-                  <p>No price data is shown until a real MT5 feed is connected.</p>
-                  <ol>
-                    <li>Open the MT5 terminal from Exness and log in to your demo account.</li>
-                    <li>Make sure gold ({config?.brokerSymbol ?? 'GOLD'}) is in Market Watch.</li>
-                    <li>If the symbol name differs, change it in Settings.</li>
-                  </ol>
-                  <p className="err">{status.message}</p>
-                  <Button variant="primary" onClick={() => void api.reconnect()}>Retry connection</Button>
-                </>
-              )}
-              {error && <p className="err">{error}</p>}
-            </div>
-          </div>
-        )}
+        <ChartGrid
+          layout={layout} tfs={tfs} activePane={activePane} sync={sync}
+          feed={{ api, status, brokerSymbol: config?.brokerSymbol ?? 'GOLD' }}
+          onActivate={setActive} onPaneTf={(i, t) => void update(withPaneTimeframe(layoutCfg, i, t))}
+          view={{
+            tick, pipSize, store, drawings, hiddenLayers, tool, onTool: setTool, stayInTool: config?.stayInTool ?? false, magnet: config?.magnet ?? true,
+            toolStyles: config?.toolStyles ?? {}, selectedId, onSelect: (id, open) => { select(id); if (open) setRightTab('inspector'); },
+            dispatch, indicators: ind.indicators, onUndo: undo, onRedo: redo,
+          }}
+        />
       </main>
       <div className="rightcol">
         <div className="rtabs" role="tablist">
           <button role="tab" className="rtab" aria-selected={rightTab === 'chat'} onClick={() => setRightTab('chat')}><Bot size={15} />AI chat</button>
           <button role="tab" className="rtab" aria-selected={rightTab === 'objects'} onClick={() => setRightTab('objects')}><Layers size={15} />Objects <span className="count">{drawings.length}</span></button>
           <button role="tab" className="rtab" aria-selected={rightTab === 'inspector'} onClick={() => setRightTab('inspector')}><SlidersHorizontal size={15} />Inspector</button>
+          <button role="tab" className="rtab" aria-selected={rightTab === 'indicators'} onClick={() => setRightTab('indicators')}><Activity size={15} />Indicators</button>
         </div>
         <div className="rbody">
           {rightTab === 'chat' && <ChatPanel />}
@@ -119,12 +118,21 @@ export function App() {
               onSelect={select} onPatch={patch} onDelete={remove} onClear={clearAll}
             />
           )}
+          {rightTab === 'indicators' && (
+            <IndicatorsPanel
+              indicators={ind.indicators} selectedId={selectedInd} activeTf={tf} onSelect={setSelectedInd}
+              onPatch={(id, p, l) => ind.dispatch([{ op: 'update', id, patch: p }], l)}
+              onDelete={(id) => { ind.dispatch([{ op: 'delete', id }], 'Remove indicator'); if (id === selectedInd) setSelectedInd(null); }}
+              onAdd={() => setIndDialog(true)}
+            />
+          )}
           {rightTab === 'inspector' && (selected
             ? <Inspector d={selected} pipSize={pipSize} spec={spec} account={account} onPatch={(p, l) => patch(selected.id, p, l)} onDelete={() => remove(selected.id)} onDuplicate={() => duplicate(selected)} />
             : <InspectorEmpty />)}
         </div>
       </div>
       <BottomPanel log={log} />
+      {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}
       {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} onClose={() => setSettings(false)} />}
     </div>
   );

@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { DrawingSchema, type Drawing } from '@aurum/core';
+import { DrawingSchema, IndicatorSchema, type Drawing, type Indicator } from '@aurum/core';
 
 /** Local SQLite store. workspace_id is on every row now so a later multi-workspace/SaaS move is not a rewrite. */
 const WORKSPACE = 'default';
@@ -19,6 +19,11 @@ function open(): DatabaseSync {
       json TEXT NOT NULL, updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS drawings_ws_symbol ON drawings (workspace_id, symbol);
+    CREATE TABLE IF NOT EXISTS indicators (
+      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, symbol TEXT NOT NULL,
+      seq INTEGER NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS indicators_ws_symbol ON indicators (workspace_id, symbol);
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL,
       PRIMARY KEY (id, workspace_id)
@@ -72,6 +77,51 @@ export function persist(p: PersistPayload): void {
     d.prepare(
       'INSERT OR IGNORE INTO command_log (command_id, workspace_id, symbol, actor, kind, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ).run(logId, WORKSPACE, p.symbol, p.log.actor, p.log.kind, p.log.label, now);
+    d.exec('COMMIT');
+  } catch (e) {
+    d.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+/** Indicators keep their insertion order (`seq`), because that is also their pane order on the chart. */
+export function loadIndicators(symbol: string): { indicators: Indicator[]; commandIds: string[] } {
+  const d = open();
+  const indicators: Indicator[] = [];
+  for (const row of d.prepare('SELECT json FROM indicators WHERE workspace_id = ? AND symbol = ? ORDER BY seq').all(WORKSPACE, symbol)) {
+    const parsed = IndicatorSchema.safeParse(JSON.parse(String((row as { json: string }).json)));
+    if (parsed.success) indicators.push(parsed.data); // a corrupt row is skipped, not fatal
+  }
+  const ids = d
+    .prepare("SELECT command_id FROM command_log WHERE workspace_id = ? AND symbol = ? AND kind = 'do'")
+    .all(WORKSPACE, symbol)
+    .map((r) => String((r as { command_id: string }).command_id));
+  return { indicators, commandIds: ids };
+}
+
+/** One transaction per user/AI action, like drawings. Indicator actions share the command_log table. */
+export function persistIndicators(p: PersistPayload): void {
+  const d = open();
+  const now = Date.now();
+  d.exec('BEGIN');
+  try {
+    for (const c of p.changes) {
+      if (c.after === null) {
+        d.prepare('DELETE FROM indicators WHERE id = ? AND workspace_id = ?').run(c.id, WORKSPACE);
+      } else {
+        const ind = IndicatorSchema.parse(c.after);
+        const seq = (d.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM indicators WHERE workspace_id = ? AND symbol = ?').get(WORKSPACE, p.symbol) as { n: number }).n;
+        // On update keep the original seq; on insert (or undo of a delete) append.
+        d.prepare(
+          'INSERT INTO indicators (id, workspace_id, symbol, seq, json, updated_at) VALUES (?, ?, ?, ?, ?, ?) ' +
+            'ON CONFLICT(id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at',
+        ).run(ind.id, WORKSPACE, p.symbol, seq, JSON.stringify(ind), now);
+      }
+    }
+    const logId = p.log.kind === 'do' ? p.log.commandId : `${p.log.commandId}:${p.log.kind}:${now}`;
+    d.prepare(
+      'INSERT OR IGNORE INTO command_log (command_id, workspace_id, symbol, actor, kind, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(logId, WORKSPACE, p.symbol, p.log.actor, p.log.kind, `[indicators] ${p.log.label}`, now);
     d.exec('COMMIT');
   } catch (e) {
     d.exec('ROLLBACK');

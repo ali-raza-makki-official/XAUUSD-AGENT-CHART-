@@ -49,6 +49,8 @@ export class DrawingStore {
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   history(): readonly HistoryEntry[] { return this.undoStack; }
+  peekUndo(): HistoryEntry | undefined { return this.undoStack.at(-1); }
+  peekRedo(): HistoryEntry | undefined { return this.redoStack.at(-1); }
 
   subscribe(fn: (e: StoreEvent) => void): () => void {
     this.listeners.add(fn);

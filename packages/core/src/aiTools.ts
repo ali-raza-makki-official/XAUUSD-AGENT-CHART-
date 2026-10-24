@@ -4,6 +4,9 @@ import { DrawingStore, type DrawingOp } from './drawingStore';
 import { DrawingSchema, makeDrawing, positionIssues, rewardRisk, type Drawing } from './drawing';
 import { lotsForRisk, priceToPips, type ContractSpec } from './risk';
 import { TimeframeSchema, type Candle, type Timeframe } from './feed';
+import { IndicatorStore, IndicatorSchema, makeIndicator, indicatorTitle, outputStyle, type IndicatorOp } from './indicatorStore';
+import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValues, warmupBars, type IndicatorType } from './indicators';
+import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 
 /**
  * The only way the AI touches the app. Every tool validates its input with Zod, checks the capability
@@ -85,10 +88,26 @@ export interface ChartState {
   account: { demo: boolean; currency: string; balance?: number; equity?: number } | null;
   selectedDrawingId: string | null;
   pipSize: number;
+  /** Chart workspace. Optional so older callers keep working. */
+  layout?: ChartLayout;
+  /** Timeframe of every visible pane, in pane order (index 0 = top-left). `timeframe` above is the active pane's. */
+  paneTimeframes?: Timeframe[];
+  activePane?: number;
+  syncScroll?: boolean;
+}
+
+/** View-state controls the app exposes to the AI (same functions the layout buttons call). */
+export interface ChartControl {
+  setLayout(layout: ChartLayout, paneTimeframes?: Timeframe[]): void | Promise<void>;
+  setPaneTimeframe(pane: number, tf: Timeframe): void | Promise<void>;
+  setSyncScroll(on: boolean): void | Promise<void>;
 }
 
 export interface ToolContext {
   store: DrawingStore;
+  /** Indicator instances (same store the Indicators dialog uses). */
+  indicators?: IndicatorStore;
+  chart?: ChartControl;
   permissions: AiPermissions;
   getState(): ChartState;
   getCandles(tf: Timeframe, count: number): Promise<Candle[]>;
@@ -141,6 +160,9 @@ function toDrawing(ctx: ToolContext, d: NewDrawingInput, commandId: string): Dra
     reason, label, note, timeframes, style: color ? { color } : undefined,
   });
 }
+
+/** Candles used to compute indicators; matches what the chart loads so AI values equal what the user sees. */
+export const INDICATOR_HISTORY = 1500;
 
 const cid = (ctx: ToolContext) => ctx.newId?.() ?? globalThis.crypto.randomUUID();
 
@@ -277,6 +299,176 @@ export const AI_TOOLS: AiTool[] = [
         return e ? { ok: true, data: { undone: e.label } } : fail('rejected', 'Nothing to undo.');
       }
       return { ok: true, data: { reverted: ctx.store.revertActor('ai', ctx.startOfToday()) } };
+    },
+  },
+  {
+    name: 'list_indicators',
+    description: 'Catalogue of available indicators (parameters with ranges, outputs, whether it overlays price or has its own pane) plus the indicator instances currently on the chart with their ids.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    run(ctx) {
+      return {
+        ok: true,
+        data: {
+          catalogue: INDICATOR_TYPES.map((t) => {
+            const d = INDICATORS[t];
+            return { type: t, name: d.name, description: d.description, placement: d.placement, usesTickVolume: d.usesTickVolume ?? false, params: d.params, outputs: d.outputs.map((o) => ({ key: o.key, label: o.label, kind: o.kind })) };
+          }),
+          active: (ctx.indicators?.list() ?? []).map((i) => ({ id: i.id, type: i.type, title: indicatorTitle(i), params: i.params, visible: i.visible, timeframes: i.timeframes, locked: i.locked, layer: i.origin.by })),
+        },
+      };
+    },
+  },
+  {
+    name: 'get_indicator_values',
+    description: 'Indicator values computed by code on the real MT5 candles (never estimate them yourself). Give an instance id from list_indicators, or a type with optional params. Returns the last `count` rows oldest first as [time, ...outputs]; null = not defined yet. The last row is the still-forming candle.',
+    input: z.object({
+      id: z.string().optional(),
+      type: z.enum(INDICATOR_TYPES).optional(),
+      params: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
+      timeframe: TimeframeSchema.optional(),
+      count: z.number().int().min(1).max(200).default(20),
+    }),
+    needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx, input: { id?: string; type?: IndicatorType; params?: Record<string, number | string>; timeframe?: Timeframe; count: number }) {
+      let type = input.type;
+      let params: Record<string, unknown> = input.params ?? {};
+      if (input.id) {
+        const inst = ctx.indicators?.get(input.id);
+        if (!inst) return fail('invalid_input', `Indicator ${input.id} not found. Call list_indicators for ids.`);
+        type = inst.type; params = inst.params;
+      }
+      if (!type) return fail('invalid_input', 'Provide either an indicator id or a type.');
+      const resolved = resolveParams(type, params);
+      if (!resolved.ok) return fail('invalid_input', resolved.error);
+      const tf = input.timeframe ?? ctx.getState().timeframe;
+      let candles: Candle[];
+      try { candles = await ctx.getCandles(tf, INDICATOR_HISTORY); } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+      if (!candles.length) return fail('unavailable', 'No candles available from the feed.');
+      const def = INDICATORS[type];
+      const series = computeIndicator(type, candles, resolved.params);
+      const keys = def.outputs.map((o) => o.key);
+      const need = warmupBars(type, resolved.params);
+      return {
+        ok: true,
+        data: {
+          type, name: def.name, params: resolved.params, timeframe: tf, candlesUsed: candles.length,
+          asOf: candles[candles.length - 1]!.time, lastCandleIsForming: true,
+          columns: ['time', ...keys], rows: tailValues(candles, series, keys, input.count),
+          ...(candles.length < need ? { warning: `Only ${candles.length} candles are available but about ${need} are needed, so values may be missing.` } : {}),
+          ...(def.usesTickVolume ? { note: 'Weighted by MT5 tick volume (number of price updates), not exchange volume.' } : {}),
+        },
+      };
+    },
+  },
+  {
+    name: 'add_indicator',
+    description: 'Add an indicator to the chart (see list_indicators for types and parameter ranges). It is marked as AI-created, can be edited by the user and undone. Omitted parameters use defaults.',
+    input: z.object({
+      type: z.enum(INDICATOR_TYPES),
+      params: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
+      label: z.string().max(80).optional(),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      width: z.number().min(1).max(8).optional(),
+      lineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(),
+      outputColors: z.record(z.string(), z.string().regex(/^#[0-9a-fA-F]{6}$/)).optional().describe('Colour per output key, e.g. {"signal":"#ff8800"}.'),
+      timeframes: z.union([z.literal('all'), z.array(TimeframeSchema)]).optional().describe("Timeframes to show on; default 'all'."),
+      reason: Reason,
+    }),
+    needs: (p) => p.indicatorsEdit, needsLabel: 'Indicators edit',
+    run(ctx, i: { type: IndicatorType; params?: Record<string, number | string>; label?: string; color?: string; width?: number; lineStyle?: 'solid' | 'dashed' | 'dotted'; outputColors?: Record<string, string>; timeframes?: 'all' | Timeframe[]; reason: string }) {
+      if (!ctx.indicators) return fail('unavailable', 'Indicators are not available in this session.');
+      const commandId = cid(ctx);
+      try {
+        const keys = INDICATORS[i.type].outputs.map((o) => o.key);
+        const badKey = Object.keys(i.outputColors ?? {}).find((k) => !keys.includes(k));
+        if (badKey) return fail('invalid_input', `${INDICATORS[i.type].name} has no output '${badKey}'. Outputs: ${keys.join(', ')}.`);
+        const ind = makeIndicator(i.type, {
+          id: ctx.newId?.() ?? globalThis.crypto.randomUUID(), actor: 'ai', now: ctx.now?.() ?? Date.now(), commandId, reason: i.reason,
+          label: i.label, params: i.params, timeframes: i.timeframes,
+          style: {
+            ...(i.color ? { color: i.color } : {}), ...(i.width ? { width: i.width } : {}), ...(i.lineStyle ? { lineStyle: i.lineStyle } : {}),
+            outputs: Object.fromEntries(Object.entries(i.outputColors ?? {}).map(([k, color]) => [k, { color }])),
+          },
+        });
+        const r = ctx.indicators.dispatch({ commandId, actor: 'ai', label: `AI added ${indicatorTitle(ind)}`, ops: [{ op: 'create', indicator: ind }] });
+        return r.ok ? { ok: true, data: { commandId, id: ind.id, type: ind.type, title: indicatorTitle(ind), params: ind.params } } : fail('rejected', r.error);
+      } catch (e) {
+        return fail('invalid_input', e instanceof Error ? e.message : String(e));
+      }
+    },
+  },
+  {
+    name: 'update_indicator',
+    description: 'Change indicator instances by id: parameters, label, visibility, timeframes, colour/width/line style or per-output styles. Locked indicators cannot be changed. Applied as one undoable batch.',
+    input: z.object({
+      updates: z.array(z.object({
+        id: z.string(),
+        patch: z.object({
+          params: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
+          label: z.string().max(80).optional(),
+          visible: z.boolean().optional(),
+          timeframes: z.union([z.literal('all'), z.array(TimeframeSchema)]).optional(),
+          style: z.object({
+            color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+            width: z.number().min(1).max(8).optional(),
+            lineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(),
+            outputs: z.record(z.string(), z.object({
+              color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), width: z.number().min(1).max(8).optional(),
+              lineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(), visible: z.boolean().optional(),
+              negColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+            }).strict()).optional(),
+          }).strict().optional(),
+        }).strict(),
+        reason: Reason,
+      })).min(1).max(20),
+    }),
+    needs: (p) => p.indicatorsEdit, needsLabel: 'Indicators edit',
+    run(ctx, input: { updates: { id: string; patch: Record<string, unknown> }[] }) {
+      if (!ctx.indicators) return fail('unavailable', 'Indicators are not available in this session.');
+      const commandId = cid(ctx);
+      const ops: IndicatorOp[] = input.updates.map((u) => ({ op: 'update', id: u.id, patch: u.patch }));
+      const r = ctx.indicators.dispatch({ commandId, actor: 'ai', label: `AI updated ${ops.length} indicator(s)`, ops });
+      return r.ok ? { ok: true, data: { commandId, updated: input.updates.map((u) => u.id) } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'remove_indicator',
+    description: 'Remove indicator instances by id. Locked indicators cannot be removed. One undoable batch.',
+    input: z.object({ ids: z.array(z.string()).min(1).max(20), reason: Reason }),
+    needs: (p) => p.indicatorsEdit, needsLabel: 'Indicators edit',
+    run(ctx, input: { ids: string[] }) {
+      if (!ctx.indicators) return fail('unavailable', 'Indicators are not available in this session.');
+      const commandId = cid(ctx);
+      const r = ctx.indicators.dispatch({ commandId, actor: 'ai', label: `AI removed ${input.ids.length} indicator(s)`, ops: input.ids.map((id) => ({ op: 'delete', id })) });
+      return r.ok ? { ok: true, data: { commandId, removed: input.ids } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'set_layout',
+    description: "Switch the chart workspace: 'single', 'two' (side by side) or 'four' (2x2, default H4/H1/M15/M5). Optionally give the timeframes of the first panes (pane order: top-left, top-right, bottom-left, bottom-right) and turn synced scrolling on/off. All panes show the same symbol from the same MT5 feed.",
+    input: z.object({ layout: ChartLayoutSchema, paneTimeframes: z.array(TimeframeSchema).min(1).max(4).optional(), syncScroll: z.boolean().optional() }),
+    needs: (p) => p.chartControl, needsLabel: 'Chart control',
+    async run(ctx, i: { layout: ChartLayout; paneTimeframes?: Timeframe[]; syncScroll?: boolean }) {
+      if (!ctx.chart) return fail('unavailable', 'Chart layout control is not available in this session.');
+      if (i.paneTimeframes && i.paneTimeframes.length > LAYOUT_PANES[i.layout]) return fail('invalid_input', `The '${i.layout}' layout has ${LAYOUT_PANES[i.layout]} pane(s) but ${i.paneTimeframes.length} timeframes were given.`);
+      await ctx.chart.setLayout(i.layout, i.paneTimeframes);
+      if (i.syncScroll !== undefined) await ctx.chart.setSyncScroll(i.syncScroll);
+      return { ok: true, data: { layout: i.layout, panes: LAYOUT_PANES[i.layout], ...(i.syncScroll !== undefined ? { syncScroll: i.syncScroll } : {}) } };
+    },
+  },
+  {
+    name: 'set_timeframe',
+    description: 'Set the timeframe of one chart pane (default: the active pane). Pane 0 is the first/top-left pane; in the single layout there is only pane 0.',
+    input: z.object({ timeframe: TimeframeSchema, pane: z.number().int().min(0).max(3).optional() }),
+    needs: (p) => p.chartControl, needsLabel: 'Chart control',
+    async run(ctx, i: { timeframe: Timeframe; pane?: number }) {
+      if (!ctx.chart) return fail('unavailable', 'Chart layout control is not available in this session.');
+      const st = ctx.getState();
+      const layout = st.layout ?? 'single';
+      if (i.pane !== undefined && i.pane >= LAYOUT_PANES[layout]) return fail('invalid_input', `The '${layout}' layout only has panes 0 to ${LAYOUT_PANES[layout] - 1}.`);
+      const pane = i.pane ?? clampPane(layout, st.activePane ?? 0);
+      await ctx.chart.setPaneTimeframe(pane, i.timeframe);
+      return { ok: true, data: { pane, timeframe: i.timeframe } };
     },
   },
 ];

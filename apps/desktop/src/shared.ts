@@ -1,4 +1,4 @@
-import type { AccountInfo, AppConfig, Candle, Drawing, FeedStatus, LlmRequest, LlmResponse, ProviderId, SymbolSpec, Tick, Timeframe } from '@aurum/core';
+import type { AccountInfo, AppConfig, Candle, Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, ProviderId, SymbolSpec, Tick, Timeframe } from '@aurum/core';
 
 /** The only surface the renderer gets from the main process (see preload). */
 export interface AurumApi {
@@ -13,6 +13,12 @@ export interface AurumApi {
     symbol: string;
     log: { commandId: string; actor: 'manual' | 'ai'; kind: 'do' | 'undo' | 'redo'; label: string };
     changes: { id: string; after: Drawing | null }[];
+  }): Promise<void>;
+  loadIndicators(symbol: string): Promise<{ indicators: Indicator[]; commandIds: string[] }>;
+  persistIndicators(p: {
+    symbol: string;
+    log: { commandId: string; actor: 'manual' | 'ai'; kind: 'do' | 'undo' | 'redo'; label: string };
+    changes: { id: string; after: Indicator | null }[];
   }): Promise<void>;
   aiStatus(): Promise<{ secureStorage: boolean; hasKey: Record<ProviderId, boolean> }>;
   aiSetKey(provider: ProviderId, key: string): Promise<void>;
@@ -39,6 +45,8 @@ export const IPC = {
   symbolSpec: 'feed:spec',
   loadDrawings: 'db:drawings:load',
   persistDrawings: 'db:drawings:persist',
+  loadIndicators: 'db:indicators:load',
+  persistIndicators: 'db:indicators:persist',
   snapshot: 'feed:snapshot',
   aiStatus: 'ai:status',
   aiSetKey: 'ai:setKey',

@@ -15,9 +15,15 @@ Plan and design: `docs/PRODUCT_PROFILE.md`. Design tokens: `design/`.
 
 ## Not built yet
 AI chat and provider adapters, alerts and schedules, WhatsApp gateway, news/calendar/sentiment connectors,
-strategy builder, indicators, multi-chart layouts, order placement and trade management, installer.
+strategy builder, indicators, multi-chart layouts, order placement and trade management.
 
-## Run on Windows
+## Install on Windows (no Node or Python needed)
+Download `Aurum-Setup-<version>.exe` from the GitHub Releases page (built by the Release workflow, see `docs/RELEASING.md`),
+check it against `SHA256SUMS.txt`, and run it. It installs per user. You still need the MT5 terminal from your broker, logged in.
+Builds are unsigned until a code-signing certificate is added, so SmartScreen may warn. The installer and auto-update path
+have not yet been exercised on a real Windows machine. Local data: `%APPDATA%\Aurum` (daily backups of `aurum.db` in `backups\`).
+
+## Run from source on Windows
 1. Install the MT5 terminal from your broker (Exness), log in to a **demo** account, and add gold to Market Watch.
 2. Install Node.js 20+ and Python 3.10+ (64-bit, same bitness as MT5).
 3. `pip install MetaTrader5`
@@ -30,4 +36,6 @@ Candle times follow the broker server clock, like the MT5 chart.
 ## Develop
 - `npm test` runs core tests (Vitest) and bridge tests (unittest).
 - `npm run typecheck`
+- `npm run pack -w @aurum/desktop` makes an unpacked app; `npm run verify:fuses -w @aurum/desktop` checks its security fuses.
+  Windows installer: `pip install MetaTrader5 pyinstaller`, `npm run bridge:exe`, `npm run dist:win` (see `docs/RELEASING.md`).
 - The MT5 module only exists on Windows; tests use a stand-in for it. The app never fabricates market data.

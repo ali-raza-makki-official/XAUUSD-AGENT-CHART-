@@ -7,3 +7,7 @@ __pycache__/
 .DS_Store
 apps/desktop/out/
 .claude/worktrees/
+apps/desktop/release/
+apps/desktop/resources/bridge/
+bridge/build/
+*.spec

@@ -1,0 +1,123 @@
+name: Release
+
+# Push a tag like v0.1.0 to build the Windows installer and attach it to a DRAFT GitHub Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - name: Tag must match the app version
+        run: |
+          $v = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME does not match apps/desktop/package.json version v$v" }
+
+      - run: npm ci
+
+      - name: Tests (core, desktop main process, python bridge)
+        run: |
+          npm run test -w @aurum/core
+          npm run test -w @aurum/desktop
+          python -m unittest discover -s bridge/tests -t bridge
+
+      - name: Build the bridge exe (PyInstaller, bundles the MetaTrader5 package)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r bridge/requirements.txt pyinstaller
+          python bridge/build_exe.py
+          if (-not (Test-Path apps/desktop/resources/bridge/aurum-bridge.exe)) { throw 'aurum-bridge.exe was not produced' }
+
+      - name: Smoke-test the frozen bridge (starts, listens on loopback, rejects a missing token)
+        run: |
+          $env:AURUM_TOKEN = 'ci-smoke-token-123456'
+          $env:AURUM_PORT = '18765'
+          $p = Start-Process -FilePath apps/desktop/resources/bridge/aurum-bridge.exe -PassThru -WindowStyle Hidden
+          try {
+            $code = 0
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 1
+              try { Invoke-WebRequest -Uri http://127.0.0.1:18765/tick -UseBasicParsing | Out-Null; $code = 200; break }
+              catch { if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode; break } }
+            }
+            if ($code -ne 401) { throw "expected HTTP 401 without token, got $code" }
+            Write-Host 'bridge exe OK (401 without token)'
+          } finally { if (-not $p.HasExited) { $p.Kill() } }
+
+      - name: Decide on code signing
+        env:
+          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if ($env:CSC_LINK_SECRET -and $env:CSC_KEY_PASSWORD_SECRET) {
+            "CSC_LINK=$env:CSC_LINK_SECRET" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            "CSC_KEY_PASSWORD=$env:CSC_KEY_PASSWORD_SECRET" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            Write-Host 'Signing secrets found: the installer will be Authenticode-signed.'
+          } else {
+            "CSC_IDENTITY_AUTO_DISCOVERY=false" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            Write-Warning 'No CSC_LINK / CSC_KEY_PASSWORD secrets: building an UNSIGNED installer (SmartScreen will warn).'
+          }
+
+      - name: Build the installer
+        run: npm run dist:win
+
+      - name: Verify Electron security fuses in the packaged exe
+        run: npm run verify:fuses -w @aurum/desktop
+
+      - name: Report signature status
+        run: |
+          Get-ChildItem apps/desktop/release/Aurum-Setup-*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            Write-Host "$($_.Name): $($s.Status) $($s.SignerCertificate.Subject)"
+          }
+
+      - name: SHA-256 checksums
+        working-directory: apps/desktop/release
+        run: |
+          Get-ChildItem Aurum-Setup-*.exe, latest.yml, *.blockmap | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.Name)"
+          } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aurum-windows
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/Aurum-Setup-*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+            apps/desktop/release/SHA256SUMS.txt
+
+      - name: Attach to a draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            apps/desktop/release/Aurum-Setup-*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+            apps/desktop/release/SHA256SUMS.txt

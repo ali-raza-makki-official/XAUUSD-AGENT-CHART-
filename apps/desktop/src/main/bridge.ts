@@ -39,6 +39,16 @@ function bridgeDir(): string {
   return app.isPackaged && existsSync(packaged) ? packaged : join(app.getAppPath(), '..', '..', 'bridge');
 }
 
+/** Packaged: the PyInstaller-frozen exe in resources/bridge (no Python needed). Dev: python -m aurum_bridge. */
+function bridgeCommand(): { cmd: string; args: string[]; label: string } {
+  if (app.isPackaged) {
+    const exe = join(bridgeDir(), process.platform === 'win32' ? 'aurum-bridge.exe' : 'aurum-bridge');
+    return { cmd: exe, args: [], label: 'bundled bridge' };
+  }
+  const python = process.env.AURUM_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
+  return { cmd: python, args: ['-m', 'aurum_bridge'], label: `Python (${python}). Install Python 3 or set AURUM_PYTHON` };
+}
+
 interface BridgeEvents {
   tick: [Tick];
   status: [FeedStatus];
@@ -66,8 +76,8 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
     this.setStatus({ state: 'starting', message: 'Starting MT5 bridge…' });
     this.port = await freePort();
     this.token = randomBytes(24).toString('hex'); // per-launch secret, never exposed to the renderer
-    const python = process.env.AURUM_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
-    const proc = spawn(python, ['-m', 'aurum_bridge'], {
+    const { cmd, args, label } = bridgeCommand();
+    const proc = spawn(cmd, args, {
       cwd: bridgeDir(),
       env: {
         ...process.env,
@@ -83,7 +93,7 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
     proc.stderr?.on('data', (d) => (stderr = (stderr + String(d)).slice(-500)));
     proc.on('error', (e) => {
       if (gen === this.generation) {
-        this.setStatus({ state: 'error', message: `Cannot start Python (${python}): ${e.message}. Install Python 3 or set AURUM_PYTHON.` });
+        this.setStatus({ state: 'error', message: `Cannot start ${label}: ${e.message}.` });
       }
     });
     proc.on('exit', (code) => {

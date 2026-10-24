@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aurum Brand Board</title>
+<style>
+:root{--app:#0E1013;--panel:#14171B;--raised:#1A1E23;--b:#262B32;--t1:#E6E9ED;--t2:#A3ABB5;--t3:#7D8590;--gold:#D4AF5A;--ai:#7FA8F5;--buy:#2EBD85;--sell:#F0616D;--warn:#E8903C}
+*{box-sizing:border-box}body{margin:0;background:var(--app);color:var(--t1);font:14px/1.5 Inter,"Segoe UI",system-ui,sans-serif;padding:32px 16px}
+main{max-width:960px;margin:auto}h1{font-size:24px;margin:0}h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--t2);margin:40px 0 12px}
+.sub{color:var(--t2);margin:4px 0 0}.row{display:flex;flex-wrap:wrap;gap:12px}.card{background:var(--panel);border:1px solid var(--b);border-radius:10px;padding:16px}
+.sw{width:132px;border:1px solid var(--b);border-radius:10px;overflow:hidden;background:var(--panel)}.sw i{display:block;height:52px}.sw b,.sw span{display:block;padding:0 10px;font-size:12px}.sw b{padding-top:8px}.sw span{color:var(--t3);padding-bottom:8px;font-family:"JetBrains Mono",Consolas,monospace}
+.mono{font-family:"JetBrains Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+.btn{border:1px solid var(--b);background:var(--raised);color:var(--t1);border-radius:6px;padding:6px 12px;font:inherit}.btn.p{background:var(--gold);color:#14171B;border-color:var(--gold);font-weight:600}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--b)}
+.mock{display:grid;grid-template-columns:44px 1fr 300px;grid-template-rows:40px 1fr 32px;gap:1px;background:var(--b);border:1px solid var(--b);border-radius:10px;overflow:hidden;height:300px}
+.mock>div{background:var(--panel);padding:8px;font-size:12px;color:var(--t2)}.mock .top{grid-column:1/4;display:flex;gap:16px;align-items:center}.mock .bot{grid-column:1/4}
+.logo{display:flex;align-items:center;gap:12px}.logo svg{width:56px;height:56px}
+</style></head><body><main>
+<div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#14171B"/><rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#262B32" stroke-width="2"/><path d="M20 14v36M32 10v30M44 18v32" stroke="#7D8590" stroke-width="2" stroke-linecap="round"/><rect x="16" y="24" width="8" height="16" rx="2" fill="#2A3038"/><rect x="40" y="26" width="8" height="14" rx="2" fill="#2A3038"/><rect x="28" y="16" width="8" height="18" rx="2" fill="#D4AF5A"/></svg>
+<div><h1>Aurum <span style="color:var(--t3);font-weight:400">(working name)</span></h1><p class="sub">AI-controlled XAUUSD trading workspace · design tokens v0.1</p></div></div>
+<h2>Colour — dark (default)</h2><div class="row">
+<div class="sw"><i style="background:#0E1013"></i><b>App bg</b><span>#0E1013</span></div>
+<div class="sw"><i style="background:#14171B"></i><b>Panel</b><span>#14171B</span></div>
+<div class="sw"><i style="background:#1A1E23"></i><b>Raised</b><span>#1A1E23</span></div>
+<div class="sw"><i style="background:#262B32"></i><b>Border</b><span>#262B32</span></div>
+<div class="sw"><i style="background:#D4AF5A"></i><b>Gold · brand</b><span>#D4AF5A</span></div>
+<div class="sw"><i style="background:#7FA8F5"></i><b>AI accent</b><span>#7FA8F5</span></div>
+<div class="sw"><i style="background:#2EBD85"></i><b>Buy only</b><span>#2EBD85</span></div>
+<div class="sw"><i style="background:#F0616D"></i><b>Sell only</b><span>#F0616D</span></div>
+<div class="sw"><i style="background:#E8903C"></i><b>Warn / stale</b><span>#E8903C</span></div></div>
+<p class="sub">Rule: green/red sirf buy/sell aur candles ke liye. Gold = manual objects aur primary action. Blue = AI-created objects, taake manual aur AI drawings ek nazar mein alag dikhen.</p>
+<h2>Type, radius, controls</h2><div class="row"><div class="card"><div class="mono" style="font-size:24px">2,341.58 <span style="color:var(--buy);font-size:13px">+0.42%</span></div><div class="sub">Inter (UI) · JetBrains Mono tabular (prices)</div></div>
+<div class="card"><button class="btn p">Apply</button> <button class="btn">Preview</button> <span class="chip" style="color:var(--ai);border-color:#2C3E5E">AI</span> <span class="chip" style="color:var(--warn)">Stale 12s</span><div class="sub">Radius: 4 chip · 6 control · 10 panel · 14 modal</div></div></div>
+<h2>Layout skeleton</h2><div class="mock"><div class="top"><b style="color:var(--gold)">Aurum</b><span class="mono">XAUUSD · M15 · 2341.58 / 2341.78 · spread 0.20</span><span class="chip" style="color:var(--buy)">MT5 connected</span></div><div>Tools</div><div>Chart (maximum space)</div><div style="border-left:1px solid var(--b)">AI chat · previews</div><div class="bot">Alerts · Setups · Journal · AI action log (collapsible)</div></div>
+</main></body></html>

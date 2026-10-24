@@ -49,7 +49,11 @@ export function App() {
   const [spec, setSpec] = useState<SymbolSpec | null>(null);
   const selected = useMemo(() => drawings.find((d) => d.id === selectedId) ?? null, [drawings, selectedId]);
 
-  const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused });
+  const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused,
+    indicators: ind.store,
+    chart: { setLayout: (l, t) => { void update(withLayout(layoutCfg, l, t)); }, setPaneTimeframe: (p, t) => { void update(withPaneTimeframe(layoutCfg, p, t)); }, setSyncScroll: (on) => { void update({ syncScroll: on }); } },
+    layout: { layout, paneTimeframes: tfs, activePane, syncScroll: config?.syncScroll ?? false },
+  });
   useEffect(() => { if (api && !settings) void api.aiStatus().then((s) => setHasKey(s.hasKey)); }, [api, settings]);
   const aiProvider = config?.ai.provider ?? null;
   const aiReady = !!aiProvider && !!hasKey[aiProvider];

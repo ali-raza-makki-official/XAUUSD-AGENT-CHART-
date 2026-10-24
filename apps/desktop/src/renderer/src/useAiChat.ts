@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, repairHistory, runAgent, runAiTool, toolCatalog,
-  type AccountInfo, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
+  type AccountInfo, type ChartControl, type IndicatorStore, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
   type FeedStatus, type Tick, type Timeframe,
 } from '@aurum/core';
 import type { AurumApi } from '../../shared';
@@ -17,6 +17,9 @@ export interface ChatDeps {
   spec: ContractSpec | null;
   selectedId: string | null;
   paused: boolean;
+  indicators?: IndicatorStore;
+  chart?: ChartControl;
+  layout?: { layout: 'single' | 'two' | 'four'; paneTimeframes: Timeframe[]; activePane: number; syncScroll: boolean };
 }
 
 const MAX_SAVED = 120;
@@ -73,11 +76,12 @@ export function useAiChat(deps: ChatDeps) {
         bid: c.tick?.bid ?? null, ask: c.tick?.ask ?? null, spread: c.tick?.spread ?? null, tickTime: c.tick?.time ?? null,
         account: c.account ? { demo: c.account.demo, currency: c.account.currency, balance: c.account.balance, equity: c.account.equity } : null,
         selectedDrawingId: c.selectedId, pipSize: c.config?.pipSize ?? 0.1,
+        ...(c.layout ? { layout: c.layout.layout, paneTimeframes: c.layout.paneTimeframes, activePane: c.layout.activePane, syncScroll: c.layout.syncScroll } : {}),
       };
     };
     const perms = () => (st().paused ? DENIED : AiPermissionsSchema.parse(st().config?.aiPermissions ?? {}));
     const toolCtx = () => ({
-      store: st().store, permissions: perms(), getState: state,
+      store: st().store, indicators: st().indicators, chart: st().chart, permissions: perms(), getState: state,
       getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
       getSpec: () => st().spec, startOfToday,
       context: {

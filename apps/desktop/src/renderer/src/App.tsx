@@ -7,7 +7,9 @@ import { ChartView } from './components/ChartView';
 import { BottomPanel, ChatPanel } from './components/Panels';
 import { SettingsDialog } from './components/Settings';
 import { Toolbar } from './components/Toolbar';
-import { Inspector } from './components/Inspector';
+import { Bot, Layers, SlidersHorizontal, Unplug, LoaderCircle, Monitor } from 'lucide-react';
+import { Inspector, InspectorEmpty } from './components/Inspector';
+import { Button } from './components/ui';
 import { ObjectsPanel } from './components/Objects';
 import type { ToolId } from './lib/tools';
 
@@ -78,11 +80,12 @@ export function App() {
           dispatch={dispatch}
         />
         {!api && (
-          <div className="overlay"><div className="state"><h2>Open the Aurum desktop app</h2><p>This page is not running inside Aurum, so there is no MT5 connection and no market data.</p></div></div>
+          <div className="overlay"><div className="state"><span className="state-ic"><Monitor size={20} /></span><h2>Open the Aurum desktop app</h2><p>This page is not running inside Aurum, so there is no MT5 connection and no market data.</p></div></div>
         )}
         {api && !candles.length && (
           <div className="overlay">
             <div className="state">
+              <span className="state-ic">{live || status.state === 'starting' ? <LoaderCircle size={20} className="spin" /> : <Unplug size={20} />}</span>
               <h2>{live ? (loading ? 'Loading candles…' : 'No candles received') : status.state === 'starting' ? 'Connecting to MT5…' : 'MT5 is not connected'}</h2>
               {!live && status.state !== 'starting' && (
                 <>
@@ -93,7 +96,7 @@ export function App() {
                     <li>If the symbol name differs, change it in Settings.</li>
                   </ol>
                   <p className="err">{status.message}</p>
-                  <button className="btn primary" onClick={() => void api.reconnect()}>Retry</button>
+                  <Button variant="primary" onClick={() => void api.reconnect()}>Retry connection</Button>
                 </>
               )}
               {error && <p className="err">{error}</p>}
@@ -103,9 +106,9 @@ export function App() {
       </main>
       <div className="rightcol">
         <div className="rtabs" role="tablist">
-          <button role="tab" className="rtab" aria-selected={rightTab === 'chat'} onClick={() => setRightTab('chat')}>AI chat</button>
-          <button role="tab" className="rtab" aria-selected={rightTab === 'objects'} onClick={() => setRightTab('objects')}>Objects ({drawings.length})</button>
-          <button role="tab" className="rtab" aria-selected={rightTab === 'inspector'} onClick={() => setRightTab('inspector')}>Inspector</button>
+          <button role="tab" className="rtab" aria-selected={rightTab === 'chat'} onClick={() => setRightTab('chat')}><Bot size={15} />AI chat</button>
+          <button role="tab" className="rtab" aria-selected={rightTab === 'objects'} onClick={() => setRightTab('objects')}><Layers size={15} />Objects <span className="count">{drawings.length}</span></button>
+          <button role="tab" className="rtab" aria-selected={rightTab === 'inspector'} onClick={() => setRightTab('inspector')}><SlidersHorizontal size={15} />Inspector</button>
         </div>
         <div className="rbody">
           {rightTab === 'chat' && <ChatPanel />}
@@ -118,7 +121,7 @@ export function App() {
           )}
           {rightTab === 'inspector' && (selected
             ? <Inspector d={selected} pipSize={pipSize} spec={spec} account={account} onPatch={(p, l) => patch(selected.id, p, l)} onDelete={() => remove(selected.id)} onDuplicate={() => duplicate(selected)} />
-            : <div className="inspector"><p className="hint">Select a drawing on the chart or in the Objects list to edit all of its settings.</p></div>)}
+            : <InspectorEmpty />)}
         </div>
       </div>
       <BottomPanel log={log} />

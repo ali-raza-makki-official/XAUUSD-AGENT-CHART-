@@ -1,8 +1,11 @@
+import { Copy, Eye, EyeOff, Lock, LockOpen, Plus, Trash2, X, MousePointerClick } from 'lucide-react';
 import {
   TIMEFRAMES, lotsForRisk, positionIssues, rewardRisk,
   type AccountInfo, type Drawing, type SymbolSpec, type Timeframe,
 } from '@aurum/core';
 import { ColorField, CommitNumber, CommitText, Field } from './Fields';
+import { kindIcon, kindName } from '../lib/toolIcons';
+import { Button, Chip, EmptyState, IconButton, Section, Segmented, Switch } from './ui';
 
 type Patch = Record<string, unknown>;
 interface Props {
@@ -21,6 +24,10 @@ const BLOCK: Record<string, string> = {
   above_max_volume: 'Lot size capped at the broker maximum.',
 };
 
+export const InspectorEmpty = () => (
+  <div className="panel-pad"><EmptyState icon={MousePointerClick} title="Nothing selected">Click a drawing on the chart or in the Objects list to edit every setting of it.</EmptyState></div>
+);
+
 function PositionFields({ d, pipSize, spec, account, onPatch }: Props & { d: Extract<Drawing, { kind: 'position' }> }) {
   const issues = positionIssues(d);
   const slDist = Math.abs(d.entry - d.stopLoss);
@@ -29,33 +36,34 @@ function PositionFields({ d, pipSize, spec, account, onPatch }: Props & { d: Ext
     onPatch({ takeProfits: d.takeProfits.map((t, k) => (k === i ? { ...t, ...change } : t)) }, 'Edit take profit');
   return (
     <>
-      <Field label="Side">
-        <select value={d.side} aria-label="Side" onChange={(e) => onPatch({ side: e.target.value }, 'Change side')}><option value="buy">Buy</option><option value="sell">Sell</option></select>
-      </Field>
-      <Field label="Entry"><CommitNumber label="Entry price" value={d.entry} onCommit={(v) => onPatch({ entry: v }, 'Edit entry')} /></Field>
-      <Field label="Stop loss"><CommitNumber label="Stop loss" value={d.stopLoss} onCommit={(v) => onPatch({ stopLoss: v }, 'Edit stop loss')} /></Field>
-      <div className="isub">Take profits</div>
-      {d.takeProfits.map((t, i) => (
-        <div className="irow tp" key={i}>
-          <span className="ilabel">TP{i + 1}</span>
-          <CommitNumber label={`TP${i + 1} price`} value={t.price} onCommit={(v) => setTp(i, { price: v })} />
-          <CommitNumber label={`TP${i + 1} close %`} value={t.closePct} step={5} min={0} max={100} digits={0} onCommit={(v) => setTp(i, { closePct: v })} />
-          <span className="mono hint">{rewardRisk(d, t.price).toFixed(1)}R</span>
-          <button className="btn" aria-label={`Remove TP${i + 1}`} onClick={() => onPatch({ takeProfits: d.takeProfits.filter((_, k) => k !== i) }, 'Remove take profit')}>×</button>
+      <Section title="Trade plan">
+        <Field label="Side"><Segmented<'buy' | 'sell'> label="Side" size="sm" value={d.side} onChange={(v) => onPatch({ side: v }, 'Change side')} options={[{ value: 'buy', label: 'Buy' }, { value: 'sell', label: 'Sell' }]} /></Field>
+        <Field label="Entry"><CommitNumber label="Entry price" value={d.entry} onCommit={(v) => onPatch({ entry: v }, 'Edit entry')} /></Field>
+        <Field label="Stop loss"><CommitNumber label="Stop loss" value={d.stopLoss} onCommit={(v) => onPatch({ stopLoss: v }, 'Edit stop loss')} /></Field>
+        <div className="irow tp hint" aria-hidden="true"><span /><span>Price</span><span>Close %</span><span>R</span><span /></div>
+        {d.takeProfits.map((t, i) => (
+          <div className="irow tp" key={i}>
+            <span className="ilabel">TP{i + 1}</span>
+            <CommitNumber label={`TP${i + 1} price`} value={t.price} onCommit={(v) => setTp(i, { price: v })} />
+            <CommitNumber label={`TP${i + 1} close %`} value={t.closePct} step={5} min={0} max={100} digits={0} onCommit={(v) => setTp(i, { closePct: v })} />
+            <span className="mono hint">{rewardRisk(d, t.price).toFixed(1)}</span>
+            <IconButton label={`Remove TP${i + 1}`} tone="danger" onClick={() => onPatch({ takeProfits: d.takeProfits.filter((_, k) => k !== i) }, 'Remove take profit')}><X size={14} /></IconButton>
+          </div>
+        ))}
+        {d.takeProfits.length < 5 && (
+          <Button size="sm" icon={Plus} onClick={() => onPatch({ takeProfits: [...d.takeProfits, { price: Number((d.entry + (d.side === 'buy' ? 1 : -1) * slDist * (d.takeProfits.length + 2)).toFixed(2)), closePct: 0 }] }, 'Add take profit')}>Add take profit</Button>
+        )}
+        {issues.map((m) => <div key={m} className="warn">{m}</div>)}
+      </Section>
+      <Section title="Risk (calculated by code)">
+        <Field label="Risk % of balance"><CommitNumber label="Risk percent" value={d.riskPct} step={0.1} min={0.01} max={100} onCommit={(v) => onPatch({ riskPct: v }, 'Edit risk %')} /></Field>
+        <div className="calc mono">
+          <div><span className="k">SL distance </span>{slDist.toFixed(2)} · {(slDist / pipSize).toFixed(0)} pips</div>
+          {sized && !sized.blocked && (<><div><span className="k">Lot size </span>{sized.lots.toFixed(2)}</div><div><span className="k">Risk </span>{sized.actualRisk.toFixed(2)} {account?.currency} of {sized.riskBudget.toFixed(2)} budget</div></>)}
+          {sized?.blocked && <div className="warn">{BLOCK[sized.blocked]}</div>}
+          {!sized && <div className="hint">Lot size appears once MT5 provides balance and contract specs.</div>}
         </div>
-      ))}
-      {d.takeProfits.length < 5 && (
-        <button className="btn" onClick={() => onPatch({ takeProfits: [...d.takeProfits, { price: Number((d.entry + (d.side === 'buy' ? 1 : -1) * slDist * (d.takeProfits.length + 2)).toFixed(2)), closePct: 0 }] }, 'Add take profit')}>Add TP</button>
-      )}
-      <div className="isub">Risk (calculated by code)</div>
-      <Field label="Risk % of balance"><CommitNumber label="Risk percent" value={d.riskPct} step={0.1} min={0.01} max={100} onCommit={(v) => onPatch({ riskPct: v }, 'Edit risk %')} /></Field>
-      <div className="calc mono">
-        <div>SL distance {slDist.toFixed(2)} = {(slDist / pipSize).toFixed(0)} pips</div>
-        {sized && !sized.blocked && (<><div>Lots {sized.lots.toFixed(2)}</div><div>Risk {sized.actualRisk.toFixed(2)} {account?.currency} of {sized.riskBudget.toFixed(2)} budget</div></>)}
-        {sized?.blocked && <div className="warn">{BLOCK[sized.blocked]}</div>}
-        {!sized && <div className="hint">Lot size appears once MT5 gives balance and contract specs.</div>}
-      </div>
-      {issues.map((m) => <div key={m} className="warn">{m}</div>)}
+      </Section>
     </>
   );
 }
@@ -64,81 +72,88 @@ export function Inspector(props: Props) {
   const { d, onPatch, onDelete, onDuplicate } = props;
   const locked = d.locked;
   const style = (s: Partial<Drawing['style']>, label: string) => onPatch({ style: s }, label);
-  const tfs = d.timeframes === 'all' ? null : d.timeframes;
+  const allTf = d.timeframes === 'all';
   const toggleTf = (tf: Timeframe) => {
-    const cur = tfs ?? [...TIMEFRAMES];
+    const cur = allTf ? [...TIMEFRAMES] : (d.timeframes as Timeframe[]);
     const next = cur.includes(tf) ? cur.filter((t) => t !== tf) : [...cur, tf];
-    onPatch({ timeframes: next.length === TIMEFRAMES.length ? 'all' : next }, 'Change timeframe visibility');
+    if (next.length) onPatch({ timeframes: next.length === TIMEFRAMES.length ? 'all' : next }, 'Change timeframe visibility');
   };
+  const name = kindName(d);
   return (
-    <div className="inspector">
+    <div className="panel-pad">
       <div className="ihead">
-        <strong>{d.kind === 'position' ? `${d.side === 'buy' ? 'Long' : 'Short'} position` : d.kind}</strong>
-        <span className={`chip ${d.layer === 'ai' ? 'demo' : 'info'}`}>{d.layer === 'ai' ? 'AI' : 'Manual'}</span>
-        {locked && <span className="chip warn">Locked</span>}
+        <span className="kind">{kindIcon(d)}</span>
+        <span className="name">{name}</span>
+        {d.layer === 'ai' ? <Chip tone="ai">AI</Chip> : <Chip>Manual</Chip>}
+        <div className="iactions">
+          <IconButton label={locked ? 'Unlock' : 'Lock (AI cannot edit)'} pressed={locked} onClick={() => onPatch({ locked: !locked }, locked ? 'Unlock drawing' : 'Lock drawing')}>{locked ? <Lock size={15} /> : <LockOpen size={15} />}</IconButton>
+          <IconButton label={d.visible ? 'Hide' : 'Show'} onClick={() => onPatch({ visible: !d.visible }, d.visible ? 'Hide drawing' : 'Show drawing')}>{d.visible ? <Eye size={15} /> : <EyeOff size={15} />}</IconButton>
+          <IconButton label="Duplicate  (Ctrl+D)" onClick={onDuplicate}><Copy size={15} /></IconButton>
+          <IconButton label="Delete  (Del)" tone="danger" disabled={locked} onClick={onDelete}><Trash2 size={15} /></IconButton>
+        </div>
       </div>
-      {d.origin.reason && <p className="reason"><strong>Why:</strong> {d.origin.reason}</p>}
-      <div className="ibtns">
-        <button className="btn" onClick={() => onPatch({ locked: !locked }, locked ? 'Unlock drawing' : 'Lock drawing')}>{locked ? 'Unlock' : 'Lock (AI cannot edit)'}</button>
-        <button className="btn" onClick={() => onPatch({ visible: !d.visible }, d.visible ? 'Hide drawing' : 'Show drawing')}>{d.visible ? 'Hide' : 'Show'}</button>
-        <button className="btn" onClick={onDuplicate}>Duplicate</button>
-        <button className="btn stop" disabled={locked} onClick={onDelete}>Delete</button>
-      </div>
+      {d.origin.reason && <p className="reason"><strong>Why: </strong>{d.origin.reason}</p>}
+      {locked && <div className="warn">Locked: the AI cannot change this drawing, and neither can you until you unlock it.</div>}
+
       <fieldset disabled={locked} className="ifs">
-        <Field label="Label"><CommitText label="Label" value={d.label} max={80} onCommit={(v) => onPatch({ label: v }, 'Edit label')} /></Field>
-        <Field label="Show label"><input type="checkbox" checked={d.showLabel} aria-label="Show label" onChange={(e) => onPatch({ showLabel: e.target.checked }, 'Toggle label')} /></Field>
-        <Field label="Note"><CommitText label="Note" value={d.note} max={1000} multiline onCommit={(v) => onPatch({ note: v }, 'Edit note')} /></Field>
+        <Section title="General">
+          <Field label="Label"><CommitText label="Label" value={d.label} max={80} onCommit={(v) => onPatch({ label: v }, 'Edit label')} /></Field>
+          <Field label="Show label"><Switch label="Show label" checked={d.showLabel} onChange={(v) => onPatch({ showLabel: v }, 'Toggle label')} /></Field>
+          <Field label="Note"><CommitText label="Note" value={d.note} max={1000} multiline onCommit={(v) => onPatch({ note: v }, 'Edit note')} /></Field>
+        </Section>
 
-        <div className="isub">Style</div>
-        <Field label="Colour"><ColorField label="Colour" value={d.style.color} onCommit={(v) => style({ color: v }, 'Change colour')} /></Field>
-        <Field label="Thickness"><CommitNumber label="Thickness" value={d.style.width} step={1} min={1} max={8} digits={0} onCommit={(v) => style({ width: v }, 'Change thickness')} /></Field>
-        <Field label="Line">
-          <select value={d.style.lineStyle} aria-label="Line style" onChange={(e) => style({ lineStyle: e.target.value as 'solid' }, 'Change line style')}><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select>
-        </Field>
-        <Field label="Fill"><CommitNumber label="Fill opacity" value={d.style.fillOpacity} step={0.02} min={0} max={1} onCommit={(v) => style({ fillOpacity: v }, 'Change fill')} /></Field>
+        <Section title="Style">
+          <Field label="Colour"><ColorField label="Colour" value={d.style.color} onCommit={(v) => style({ color: v }, 'Change colour')} /><span className="mono hint">{d.style.color.toUpperCase()}</span></Field>
+          <Field label="Thickness"><CommitNumber label="Thickness" value={d.style.width} step={1} min={1} max={8} digits={0} onCommit={(v) => style({ width: v }, 'Change thickness')} /></Field>
+          <Field label="Line"><Segmented<'solid' | 'dashed' | 'dotted'> label="Line style" size="sm" value={d.style.lineStyle} onChange={(v) => style({ lineStyle: v }, 'Change line style')} options={[{ value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' }]} /></Field>
+          <Field label="Fill"><CommitNumber label="Fill opacity" value={d.style.fillOpacity} step={0.02} min={0} max={1} onCommit={(v) => style({ fillOpacity: v }, 'Change fill')} /></Field>
+        </Section>
 
-        <div className="isub">Geometry</div>
-        {d.kind === 'hline' && <Field label="Price"><CommitNumber label="Price" value={d.price} onCommit={(v) => onPatch({ price: v }, 'Edit price')} /></Field>}
-        {(d.kind === 'ray' || d.kind === 'trendline' || d.kind === 'zone' || d.kind === 'fib' || d.kind === 'measure' || d.kind === 'channel') && (
-          <>
-            <Field label={d.kind === 'zone' ? 'Top/Start price' : 'Start price'}><CommitNumber label="Start price" value={d.a.price} onCommit={(v) => onPatch({ a: { ...d.a, price: v } }, 'Edit price')} /></Field>
-            <Field label={d.kind === 'zone' ? 'Bottom/End price' : 'End price'}><CommitNumber label="End price" value={d.b.price} onCommit={(v) => onPatch({ b: { ...d.b, price: v } }, 'Edit price')} /></Field>
-          </>
+        {d.kind !== 'position' && (
+          <Section title="Geometry">
+            {d.kind === 'hline' && <Field label="Price"><CommitNumber label="Price" value={d.price} onCommit={(v) => onPatch({ price: v }, 'Edit price')} /></Field>}
+            {(d.kind === 'ray' || d.kind === 'trendline' || d.kind === 'zone' || d.kind === 'fib' || d.kind === 'measure' || d.kind === 'channel') && (
+              <>
+                <Field label={d.kind === 'zone' ? 'Top price' : 'Start price'}><CommitNumber label="Start price" value={d.a.price} onCommit={(v) => onPatch({ a: { ...d.a, price: v } }, 'Edit price')} /></Field>
+                <Field label={d.kind === 'zone' ? 'Bottom price' : 'End price'}><CommitNumber label="End price" value={d.b.price} onCommit={(v) => onPatch({ b: { ...d.b, price: v } }, 'Edit price')} /></Field>
+              </>
+            )}
+            {d.kind === 'trendline' && (
+              <Field label="Extend"><Segmented<'none' | 'right' | 'both'> label="Extend" size="sm" value={d.extend} onChange={(v) => onPatch({ extend: v }, 'Change extension')} options={[{ value: 'none', label: 'None' }, { value: 'right', label: 'Right' }, { value: 'both', label: 'Both' }]} /></Field>
+            )}
+            {d.kind === 'zone' && (
+              <>
+                <Field label="Type"><select className="select" value={d.zoneType} aria-label="Zone type" onChange={(e) => onPatch({ zoneType: e.target.value }, 'Change zone type')}>{['support', 'resistance', 'supply', 'demand', 'custom'].map((z) => <option key={z} value={z}>{z[0]!.toUpperCase() + z.slice(1)}</option>)}</select></Field>
+                <Field label="Extend right"><Switch label="Extend right" checked={d.extendRight} onChange={(v) => onPatch({ extendRight: v }, 'Toggle extension')} /></Field>
+              </>
+            )}
+            {d.kind === 'text' && <Field label="Text"><CommitText label="Text" value={d.text} max={500} multiline onCommit={(v) => onPatch({ text: v }, 'Edit text')} /></Field>}
+          </Section>
         )}
-        {d.kind === 'trendline' && (
-          <Field label="Extend"><select value={d.extend} aria-label="Extend" onChange={(e) => onPatch({ extend: e.target.value }, 'Change extension')}><option value="none">None</option><option value="right">Right</option><option value="both">Both</option></select></Field>
-        )}
-        {d.kind === 'zone' && (
-          <>
-            <Field label="Type"><select value={d.zoneType} aria-label="Zone type" onChange={(e) => onPatch({ zoneType: e.target.value }, 'Change zone type')}>{['support', 'resistance', 'supply', 'demand', 'custom'].map((z) => <option key={z} value={z}>{z}</option>)}</select></Field>
-            <Field label="Extend right"><input type="checkbox" checked={d.extendRight} aria-label="Extend right" onChange={(e) => onPatch({ extendRight: e.target.checked }, 'Toggle extension')} /></Field>
-          </>
-        )}
+
         {d.kind === 'fib' && (
-          <>
-            <Field label="Extend right"><input type="checkbox" checked={d.extendRight} aria-label="Extend right" onChange={(e) => onPatch({ extendRight: e.target.checked }, 'Toggle extension')} /></Field>
-            <div className="isub">Levels</div>
+          <Section title="Levels" action={<Switch label="Extend right" checked={d.extendRight} onChange={(v) => onPatch({ extendRight: v }, 'Toggle extension')} />}>
             {d.levels.map((l, i) => (
-              <div className="irow tp" key={i}>
-                <input type="checkbox" checked={l.visible} aria-label={`Show level ${l.ratio}`} onChange={(e) => onPatch({ levels: d.levels.map((x, k) => (k === i ? { ...x, visible: e.target.checked } : x)) }, 'Toggle fib level')} />
+              <div className="irow lv" key={i}>
+                <Switch label={`Show level ${l.ratio}`} checked={l.visible} onChange={(v) => onPatch({ levels: d.levels.map((x, k) => (k === i ? { ...x, visible: v } : x)) }, 'Toggle fib level')} />
                 <CommitNumber label={`Level ${i + 1} ratio`} value={l.ratio} step={0.001} digits={3} onCommit={(v) => onPatch({ levels: d.levels.map((x, k) => (k === i ? { ...x, ratio: v } : x)) }, 'Edit fib level')} />
                 <ColorField label={`Level ${l.ratio} colour`} value={l.color ?? d.style.color} onCommit={(v) => onPatch({ levels: d.levels.map((x, k) => (k === i ? { ...x, color: v } : x)) }, 'Edit fib colour')} />
-                <button className="btn" aria-label={`Remove level ${l.ratio}`} onClick={() => onPatch({ levels: d.levels.filter((_, k) => k !== i) }, 'Remove fib level')}>×</button>
+                <IconButton label={`Remove level ${l.ratio}`} tone="danger" onClick={() => onPatch({ levels: d.levels.filter((_, k) => k !== i) }, 'Remove fib level')}><X size={14} /></IconButton>
               </div>
             ))}
-            <button className="btn" onClick={() => onPatch({ levels: [...d.levels, { ratio: 0.9, visible: true }] }, 'Add fib level')}>Add level</button>
-          </>
+            <Button size="sm" icon={Plus} onClick={() => onPatch({ levels: [...d.levels, { ratio: 0.9, visible: true }] }, 'Add fib level')}>Add level</Button>
+          </Section>
         )}
-        {d.kind === 'text' && <Field label="Text"><CommitText label="Text" value={d.text} max={500} multiline onCommit={(v) => onPatch({ text: v }, 'Edit text')} /></Field>}
+
         {d.kind === 'position' && <PositionFields {...props} d={d} />}
 
-        <div className="isub">Visible on timeframes</div>
-        <div className="tfchecks">
-          <label><input type="checkbox" checked={d.timeframes === 'all'} onChange={() => onPatch({ timeframes: d.timeframes === 'all' ? ['H1'] : 'all' }, 'Change timeframe visibility')} /> All</label>
-          {TIMEFRAMES.map((tf) => (
-            <label key={tf}><input type="checkbox" disabled={d.timeframes === 'all'} checked={d.timeframes === 'all' || d.timeframes.includes(tf)} onChange={() => toggleTf(tf)} /> {tf}</label>
-          ))}
-        </div>
+        <Section title="Visible on timeframes" action={<Switch label="All timeframes" checked={allTf} onChange={(v) => onPatch({ timeframes: v ? 'all' : ['H1'] }, 'Change timeframe visibility')} />}>
+          <div className="tfgrid">
+            {TIMEFRAMES.map((tf) => (
+              <button key={tf} className="tfpill" disabled={allTf} aria-pressed={allTf || (d.timeframes as Timeframe[]).includes(tf)} onClick={() => toggleTf(tf)}>{tf}</button>
+            ))}
+          </div>
+        </Section>
       </fieldset>
       <p className="hint">Created {new Date(d.origin.at).toLocaleString()} by {d.origin.by === 'ai' ? 'AI' : 'you'}.</p>
     </div>

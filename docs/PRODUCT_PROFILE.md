@@ -21,6 +21,9 @@ Visual tokens: `design/tokens.json`, preview: `design/brand-board.html`, logo: `
 | Layout | Top bar 40px, left toolbar 44px, centre chart, right AI chat 320–560px resizable, bottom collapsible panel. Chart ko maximum space |
 | Density | Compact by default (trading screens), comfortable option |
 | Motion | 120–180ms, `prefers-reduced-motion` ka ehtram |
+| Icons | lucide-react (UI) + custom chart-tool icons, same 24px grid aur 1.75 stroke, taake ek family lage |
+| Fonts | Inter aur JetBrains Mono app ke andar bundled (offline, install nahi karni parti) |
+| Components | Button (primary/secondary/ghost/danger), IconButton + tooltip, Switch, Segmented, Chip, Section, EmptyState, Dialog |
 | Logo | Teen candles, beech wali gold ("Au" signal). 16px tak readable, monochrome version bhi |
 | i18n | English + Roman Urdu/Urdu (RTL-ready layout), ISO 8601 aur UTC internally, user timezone display |
 | Standards | WCAG 2.2 AA, keyboard-first (command palette `Ctrl+K`), OWASP ASVS, GDPR-ready data export/delete |

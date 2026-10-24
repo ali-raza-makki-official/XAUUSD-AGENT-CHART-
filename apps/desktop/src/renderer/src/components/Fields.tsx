@@ -7,25 +7,26 @@ export function CommitText({ value, onCommit, label, max = 200, multiline = fals
   const done = () => v !== value && onCommit(v);
   const common = { value: v, maxLength: max, 'aria-label': label, onChange: (e: { target: { value: string } }) => setV(e.target.value), onBlur: done };
   return multiline
-    ? <textarea rows={2} {...common} />
-    : <input {...common} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
+    ? <textarea className="textarea" rows={2} {...common} />
+    : <input className="input" {...common} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
 }
 
 export function CommitNumber({ value, onCommit, label, step = 0.01, min, max, digits = 2 }: { value: number; onCommit: (v: number) => void; label: string; step?: number; min?: number; max?: number; digits?: number }) {
-  const [v, setV] = useState(String(Number(value.toFixed(digits))));
-  useEffect(() => setV(String(Number(value.toFixed(digits)))), [value, digits]);
+  const fmt = (n: number) => String(Number(n.toFixed(digits)));
+  const [v, setV] = useState(fmt(value));
+  useEffect(() => setV(fmt(value)), [value, digits]); // eslint-disable-line react-hooks/exhaustive-deps
   const done = () => {
     const n = Number(v);
     if (Number.isFinite(n) && n !== value && (min === undefined || n >= min) && (max === undefined || n <= max)) onCommit(n);
-    else setV(String(Number(value.toFixed(digits))));
+    else setV(fmt(value));
   };
-  return <input className="mono" type="number" step={step} min={min} max={max} value={v} aria-label={label} onChange={(e) => setV(e.target.value)} onBlur={done} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
+  return <input className="input mono" type="number" step={step} min={min} max={max} value={v} aria-label={label} onChange={(e) => setV(e.target.value)} onBlur={done} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />;
 }
 
 export function ColorField({ value, onCommit, label }: { value: string; onCommit: (v: string) => void; label: string }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
-  return <input type="color" value={v} aria-label={label} onChange={(e) => setV(e.target.value)} onBlur={() => v !== value && onCommit(v)} />;
+  return <input type="color" value={v} aria-label={label} title={v.toUpperCase()} onChange={(e) => setV(e.target.value)} onBlur={() => v !== value && onCommit(v)} />;
 }
 
 export const Field = ({ label, children }: { label: string; children: ReactNode }) => (

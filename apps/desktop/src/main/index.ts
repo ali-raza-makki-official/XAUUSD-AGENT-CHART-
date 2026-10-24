@@ -20,7 +20,7 @@ function createWindow(): void {
     width: 1480,
     height: 900,
     minWidth: 1024,
-    minHeight: 640,
+    minHeight: 720,
     backgroundColor: '#0E1013',
     title: 'Aurum',
     show: false,

@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { Eye, EyeOff, Layers, Lock, LockOpen, Trash2, Sparkles, User } from 'lucide-react';
 import type { Drawing } from '@aurum/core';
+import { kindIcon, kindName } from '../lib/toolIcons';
+import { Button, EmptyState, IconButton } from './ui';
 
 const summary = (d: Drawing): string => {
   switch (d.kind) {
     case 'hline': return d.price.toFixed(2);
-    case 'vline': return new Date(d.time * 1000).toISOString().slice(0, 16).replace('T', ' ');
-    case 'position': return `${d.side} @ ${d.entry.toFixed(2)}`;
-    case 'text': return d.text.slice(0, 24);
+    case 'vline': return new Date(d.time * 1000).toISOString().slice(5, 16).replace('T', ' ');
+    case 'position': return `${d.side} ${d.entry.toFixed(2)}`;
+    case 'text': return d.text.slice(0, 18);
     case 'zone': return `${d.a.price.toFixed(2)}–${d.b.price.toFixed(2)}`;
     default: return `${d.a.price.toFixed(2)} → ${d.b.price.toFixed(2)}`;
   }
@@ -26,32 +29,44 @@ interface Props {
 export function ObjectsPanel({ drawings, selectedId, hiddenLayers, onHideLayer, onSelect, onPatch, onDelete, onClear }: Props) {
   const [confirm, setConfirm] = useState(false);
   const sorted = [...drawings].sort((a, b) => b.origin.at - a.origin.at);
+  const n = (l: 'manual' | 'ai') => drawings.filter((d) => d.layer === l).length;
   return (
-    <div className="objects">
-      <div className="ibtns">
-        <button className="btn" aria-pressed={!hiddenLayers.manual} onClick={() => onHideLayer('manual')}>{hiddenLayers.manual ? 'Show' : 'Hide'} manual layer</button>
-        <button className="btn" aria-pressed={!hiddenLayers.ai} onClick={() => onHideLayer('ai')}>{hiddenLayers.ai ? 'Show' : 'Hide'} AI layer</button>
+    <div className="panel-pad">
+      <div className="layers">
+        <button className="layerbtn" aria-pressed={!hiddenLayers.manual} onClick={() => onHideLayer('manual')} title={hiddenLayers.manual ? 'Show manual layer' : 'Hide manual layer'}>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><User size={14} aria-hidden="true" />Manual <span className="count">{n('manual')}</span></span>
+          {hiddenLayers.manual ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+        <button className="layerbtn" aria-pressed={!hiddenLayers.ai} onClick={() => onHideLayer('ai')} title={hiddenLayers.ai ? 'Show AI layer' : 'Hide AI layer'}>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', color: 'var(--ai)' }}><Sparkles size={14} aria-hidden="true" />AI <span className="count">{n('ai')}</span></span>
+          {hiddenLayers.ai ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
       </div>
-      {sorted.length === 0 && <p className="hint">No drawings yet. Pick a tool on the left and click on the chart.</p>}
-      <ul className="olist">
-        {sorted.map((d) => (
-          <li key={d.id} className={d.id === selectedId ? 'sel' : ''}>
-            <button className="orow" onClick={() => onSelect(d.id)}>
-              <span className={`chip ${d.layer === 'ai' ? 'demo' : 'info'}`}>{d.layer === 'ai' ? 'AI' : 'You'}</span>
-              <span className="oname">{d.label || d.kind}</span>
-              <span className="mono hint">{summary(d)}</span>
-            </button>
-            <button className="btn" aria-label={d.visible ? 'Hide drawing' : 'Show drawing'} title={d.visible ? 'Hide' : 'Show'} onClick={() => onPatch(d.id, { visible: !d.visible }, d.visible ? 'Hide drawing' : 'Show drawing')}>{d.visible ? '◉' : '○'}</button>
-            <button className="btn" aria-label={d.locked ? 'Unlock drawing' : 'Lock drawing'} title={d.locked ? 'Unlock' : 'Lock'} onClick={() => onPatch(d.id, { locked: !d.locked }, d.locked ? 'Unlock drawing' : 'Lock drawing')}>{d.locked ? 'Locked' : 'Lock'}</button>
-            <button className="btn" aria-label="Delete drawing" disabled={d.locked} onClick={() => onDelete(d.id)}>×</button>
-          </li>
-        ))}
-      </ul>
-      {sorted.length > 0 && (
-        confirm ? (
-          <div className="confirm"><span>Delete all {sorted.filter((d) => !d.locked).length} unlocked drawings?</span><button className="btn" onClick={() => setConfirm(false)} autoFocus>Cancel</button><button className="btn stop" onClick={() => { onClear(); setConfirm(false); }}>Delete all</button></div>
-        ) : <button className="btn" onClick={() => setConfirm(true)}>Delete all drawings…</button>
+      {sorted.length === 0 ? (
+        <EmptyState icon={Layers} title="No drawings yet">Pick a tool on the left and click on the chart. Anything you or the AI draws is listed here.</EmptyState>
+      ) : (
+        <ul className="olist">
+          {sorted.map((d) => (
+            <li key={d.id} className={`oitem ${d.layer} ${d.id === selectedId ? 'sel' : ''}`}>
+              <button className="orow" onClick={() => onSelect(d.id)}>
+                <span className="ic">{kindIcon(d)}</span>
+                <span className="oname">{d.label || kindName(d)}</span>
+                <span className="ometa">{summary(d)}</span>
+              </button>
+              <IconButton label={d.visible ? 'Hide drawing' : 'Show drawing'} pos="left" onClick={() => onPatch(d.id, { visible: !d.visible }, d.visible ? 'Hide drawing' : 'Show drawing')}>{d.visible ? <Eye size={15} /> : <EyeOff size={15} />}</IconButton>
+              <IconButton label={d.locked ? 'Unlock drawing' : 'Lock drawing'} pos="left" pressed={d.locked} onClick={() => onPatch(d.id, { locked: !d.locked }, d.locked ? 'Unlock drawing' : 'Lock drawing')}>{d.locked ? <Lock size={15} /> : <LockOpen size={15} />}</IconButton>
+              <IconButton label="Delete drawing" pos="left" tone="danger" disabled={d.locked} onClick={() => onDelete(d.id)}><Trash2 size={15} /></IconButton>
+            </li>
+          ))}
+        </ul>
       )}
+      {sorted.length > 0 && (confirm ? (
+        <div className="confirm">
+          <span>Delete all {sorted.filter((d) => !d.locked).length} unlocked drawings?</span>
+          <Button size="sm" onClick={() => setConfirm(false)} autoFocus>Cancel</Button>
+          <Button size="sm" variant="danger" onClick={() => { onClear(); setConfirm(false); }}>Delete all</Button>
+        </div>
+      ) : <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm(true)}>Delete all drawings…</Button>)}
     </div>
   );
 }

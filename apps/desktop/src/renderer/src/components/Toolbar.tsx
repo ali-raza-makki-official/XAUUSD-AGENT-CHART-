@@ -1,8 +1,7 @@
+import { Magnet, Pin, Redo2, Undo2 } from 'lucide-react';
 import { TOOLS, type ToolId } from '../lib/tools';
-
-const Icon = ({ d }: { d: string }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
-);
+import { TOOL_ICONS } from '../lib/toolIcons';
+import { IconButton } from './ui';
 
 interface Props {
   tool: ToolId;
@@ -17,20 +16,35 @@ interface Props {
   onStay: () => void;
 }
 
+const GROUPS: ToolId[][] = [
+  ['cursor'],
+  ['hline', 'vline', 'ray', 'trendline', 'channel'],
+  ['zone', 'fib'],
+  ['long', 'short', 'measure', 'text'],
+];
+
 export function Toolbar(p: Props) {
   return (
     <nav className="toolbar" aria-label="Drawing tools">
-      {TOOLS.map((t) => (
-        <button key={t.id} className="tool" aria-pressed={p.tool === t.id} aria-label={t.label} title={`${t.label}${t.key ? ` (${t.key})` : ''}`} onClick={() => p.onTool(t.id)}>
-          <Icon d={t.icon} />
-        </button>
+      {GROUPS.map((g, gi) => (
+        <div key={gi} style={{ display: 'contents' }}>
+          {gi > 0 && <span className="tgroup-sep" />}
+          {g.map((id) => {
+            const t = TOOLS.find((x) => x.id === id)!;
+            return (
+              <IconButton key={id} pos="right" label={t.label} tip={t.key ? `${t.label}  (${t.key})` : t.label} pressed={p.tool === id} onClick={() => p.onTool(id)}>
+                {TOOL_ICONS[id]}
+              </IconButton>
+            );
+          })}
+        </div>
       ))}
-      <span className="tool-sep" />
-      <button className="tool" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.onUndo}><Icon d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" /></button>
-      <button className="tool" aria-label="Redo" title="Redo (Ctrl+Y)" disabled={!p.canRedo} onClick={p.onRedo}><Icon d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3" /></button>
-      <span className="tool-sep" />
-      <button className="tool" aria-pressed={p.magnet} aria-label="Magnet: snap to candle prices" title="Magnet: snap to candle open/high/low/close" onClick={p.onMagnet}><Icon d="M6 4v8a6 6 0 0012 0V4h-4v8a2 2 0 01-4 0V4z" /></button>
-      <button className="tool" aria-pressed={p.stayInTool} aria-label="Stay in drawing mode" title="Stay in drawing mode after each drawing" onClick={p.onStay}><Icon d="M12 3v4M12 17v4M3 12h4M17 12h4M12 12h.01" /></button>
+      <span className="tgroup-sep" />
+      <IconButton pos="right" label="Undo" tip="Undo  (Ctrl+Z)" disabled={!p.canUndo} onClick={p.onUndo}><Undo2 size={18} strokeWidth={1.75} /></IconButton>
+      <IconButton pos="right" label="Redo" tip="Redo  (Ctrl+Y)" disabled={!p.canRedo} onClick={p.onRedo}><Redo2 size={18} strokeWidth={1.75} /></IconButton>
+      <span className="tgroup-sep" />
+      <IconButton pos="right" label="Magnet" tip="Magnet: snap to candle open/high/low/close" pressed={p.magnet} onClick={p.onMagnet}><Magnet size={18} strokeWidth={1.75} /></IconButton>
+      <IconButton pos="right" label="Stay in drawing mode" tip="Keep the tool selected after each drawing" pressed={p.stayInTool} onClick={p.onStay}><Pin size={18} strokeWidth={1.75} /></IconButton>
     </nav>
   );
 }

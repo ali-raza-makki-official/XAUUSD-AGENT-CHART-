@@ -271,3 +271,5 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .toast-critical { border-left-color: var(--sell); color: var(--sell); }
 .toast-b { display: grid; flex: 1; min-width: 0; color: var(--t1); user-select: text; }
 .toast-b span { color: var(--t2); font-size: 12px; }
+
+@media (max-height: 940px) { .toolbar { gap: 0; padding: 4px 0; } .toolbar .ibtn { width: 30px; height: 30px; } .tgroup-sep { margin: 3px 0; } }

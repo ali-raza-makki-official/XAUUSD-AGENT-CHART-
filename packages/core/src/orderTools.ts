@@ -47,8 +47,9 @@ export const ORDER_TOOLS: AiTool[] = [
       'Lot size: give riskPct and the app computes the lots with code (or give volume). After calling, tell the user a preview is waiting for their confirmation. ' +
       'NEVER say an order was placed, modified or closed: only the broker result shown in the app counts.',
     input: ProposalInput,
-    needs: (p) => p.chartRead,
-    needsLabel: 'Chart read',
+    // Hidden from the model until the app has an orders service and the owner picks confirm mode.
+    needs: (p) => p.chartRead && p.orders !== 'suggest',
+    needsLabel: 'Chart read and orders mode confirm',
     async run(ctx, input: Proposal): Promise<ToolResult> {
       const port = ctx.orders;
       if (!port) return fail('unavailable', 'Order previews are not available in this session.');

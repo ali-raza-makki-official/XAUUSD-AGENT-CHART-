@@ -7,6 +7,7 @@ import {
 import type { AurumApi } from '../../../shared';
 import { Button, Chip, IconButton, Section, Segmented, Switch } from './ui';
 import { ConnectorsSettings } from './ConnectorsSettings';
+import { NotificationSettings } from './AlertsPanel';
 import { WhatsAppSettings } from './WhatsAppSettings';
 
 interface Props {
@@ -166,6 +167,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
                 <input id="pip" className="input mono" style={{ maxWidth: 140 }} value={pip} onChange={(e) => setPip(e.target.value)} />
                 <span className="hint">Gold is usually 0.10, so 50–100 pips is 5–10 in price. Confirm against your broker.</span>
               </div>
+            <NotificationSettings config={config} onSave={onSave} />
             </>
           )}
           {tab === 'styles' && (

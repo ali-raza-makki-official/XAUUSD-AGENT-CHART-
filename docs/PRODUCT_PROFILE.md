@@ -132,18 +132,136 @@ WhatsApp  ⇄  Gateway (poller + sender queue)  ⇄  Session router  ⇄  AI orc
 - **Security/compliance:** Electron isolation, restricted IPC, audit log, export/delete, baad mein SOC 2 jaisi roadmap.
 - **Licence/plans:** Free (read-only AI), Pro (chart control, alerts), Trader (execution + WhatsApp). Pricing baad mein.
 
-## 7. Revised phases
-1. Foundation: Electron shell, design tokens, layout, SQLite, simulated feed, command bus.
-2. Manual tools + undo/redo + saved workspaces.
-3. LLM adapter (Anthropic pehle, phir OpenAI/Gemini/DeepSeek) + read-only AI.
-4. AI chart control + preview/apply + action log.
-5. MT5 bridge: feed, positions, SL/TP, close, partial (demo).
-6. Connector SDK + sessions/news/calendar/sentiment/indexes.
-7. WhatsApp connector (alerts out, status/analysis in, confirmed actions).
-8. Setups/rules engine, journal, replay, paper trading, installer.
-9. SaaS foundations (multi-tenant, bridge agent, billing).
+## 7. Central command system (sab se zaroori)
+Desktop chat, WhatsApp, aur future mobile/web, sab ek hi pipeline se guzrein. Trading logic sirf ek jagah hogi.
 
-## 8. Abhi ke open faisle
-1. Naam: "Aurum" theek hai ya aur options chahiye?
-2. News/sentiment/calendar ke liye koi paid provider already hai? (warna pehle free/sample adapters)
-3. Broker ka naam aur XAUUSD symbol (`XAUUSD`, `XAUUSDm`, `GOLD`).
+```
+Command → identity/permission check → validation → risk engine → action → broker result → activity log
+```
+- Har command ki **unique `commandId` (idempotency key)**. Retry, double click ya WhatsApp ka duplicate message dobara execute nahi hoga, wahi purana result wapas milega.
+- Har command mein: `origin` (desktop/whatsapp/ai/rule), `actor`, `createdAt`, `expiresAt`, `payload`, `status`.
+- Expired command execute nahi hoti (trade ke liye chhota TTL).
+- Sab commands activity log mein, aur replay/audit ke liye immutable.
+
+## 8. AI ki boundaries (capability matrix)
+"Totally AI controlled" ka matlab uncontrolled access nahi. Settings mein har capability alag allow/block hogi:
+
+| Capability | Control |
+|---|---|
+| Chart read aur analysis | Allow / block |
+| Drawings aur indicators edit | Allow / block |
+| Alerts aur setups create | Allow / block |
+| Orders place | Suggest / confirmation / automatic |
+| SL/TP modify aur partial close | Alag permission |
+| Bulk close | Alag permission |
+| Connectors aur credentials | Protected settings (AI ko kabhi nahi milti, passcode ke baghair change nahi) |
+
+**Emergency "Stop AI actions"** button hamesha visible (top bar). Ye sirf naye AI actions roke. Existing positions band karna alag, saaf label wala action ("Close all positions"), confirmation ke saath.
+
+## 9. Broker state final authority hai
+AI chat mein "order executed" tabhi likha jaye jab broker result verify ho chuka ho.
+
+States: `requested` → `validation_failed` | `sent_to_broker` → `confirmed` | `rejected` | `unknown_reconcile`
+
+- Connection tootne ya timeout par order **blindly dobara send nahi hoga**. Pehle positions, pending orders aur deal history check hogi (command par comment/magic number lagta hai taake match ho sake).
+- `unknown_reconcile` mein naye orders us symbol par rukte hain jab tak reconciliation na ho.
+- Periodic sync: MT5 mein hath se kiye gaye changes (manual close, SL move) app mein reflect hon, "external change" ke label ke saath.
+
+## 10. XAUUSD risk engine (deterministic code, LLM nahi)
+Lot size aur risk calculation sirf code karega. AI sirf result dekhta aur explain karta hai.
+- Inputs: account currency, broker contract spec (contract size, tick size/value, min/max/step volume), commission, spread, estimated slippage.
+- Controls: per-trade max risk, total open risk, max daily loss (aur reset timezone), max spread, allowed slippage, max simultaneous positions, **missing-SL policy** (block / auto-suggest).
+- **Demo/Live badge** bara aur hamesha visible, live par rang aur label alag.
+- Daily limit hit: naye orders block. Existing positions ke liye alag policy (sirf manage/close allowed, ya freeze), settings mein define.
+- Har order ke saath risk snapshot save ho (lot, risk %, SL distance, spread at entry).
+
+## 11. Multi-timeframe workspace
+- Layouts: single, two-chart, four-chart (H4/H1/M15/M5 linked).
+- Synced crosshair, optional synced scrolling, higher-timeframe levels lower timeframe par dikhna.
+- **Drawing layers**: manual aur AI alag, har layer show/hide/lock.
+- Selected drawings **lock** ho sakein, AI unhein edit nahi karegi.
+- Workspace autosave aur crash recovery (command log se rebuild).
+
+## 12. AI analysis ka fixed card
+Har analysis structured card, sirf lamba paragraph nahi:
+
+| Field | Kya dikhaye |
+|---|---|
+| Data reference | Feed, timeframe, analysis ka time |
+| Market structure | Bullish / bearish / ranging / unclear |
+| Relevant levels | Level aur wajah |
+| Scenario | Kis condition par setup valid |
+| Invalidation | Kis condition par idea khatam |
+| Missing information | Kya data available nahi |
+| Actions | Chart par kya create/edit hua |
+
+**"No setup" valid jawab hai.** AI ko har bar buy/sell idea dene par majboor nahi kiya jayega. Card ka schema Zod se validate hota hai, to desktop aur WhatsApp dono par same format.
+
+## 13. Strategy builder aur version history
+- Aap chat mein strategy samjhayen, AI usay editable rule JSON mein badle, **activation se pehle preview**.
+- Har strategy ka **immutable version**. Purane trades/setups usi version se link rahen, baad ki edit historical performance nahi badalti.
+- Replay/backtest mein **future candles AI ko nahi milte** (time-gated data access).
+- Report mein spread, commission, slippage assumptions saaf likhe hon.
+- Rule-based conditions code evaluate kare, AI sirf interpretation aur explanation.
+
+## 14. Universal connector hub
+Common contract har connector ke liye: `testConnection()`, `permissions`, `lastSuccessfulSync`, `errorStatus`, `rateLimit` handling, aur har data point ke saath `source` + `timestamp`.
+
+| Category | Purpose |
+|---|---|
+| Broker | Prices, account, positions, orders |
+| AI provider | Chat, vision, tool calling |
+| News/calendar | Events, releases, news |
+| Related markets | Indexes, yields, instruments |
+| Sentiment | Source-specific sentiment |
+| Messaging | WhatsApp, future channels |
+| Export/storage | Reports, backups |
+
+**"Koi bhi provider" ka matlab:** sirf base URL + API key se tools aur vision automatically kaam nahi karte. Is liye har provider ka **adapter** hoga jo capabilities declare kare (`tools`, `vision`, `streaming`, `json_mode`, context size), aur app unhi features ko enable kare jo adapter support karta ho. OpenAI-compatible providers (jaise DeepSeek) ke liye generic adapter, capability flags manual set ho sakte hain.
+
+## 15. WhatsApp remote gateway (controls)
+Section 5b ke upar ye controls:
+- Verified account linking (app mein pairing code WhatsApp se bhej kar).
+- Allowed numbers aur device/session management, session revoke.
+- Read-only aur trading permissions alag.
+- Sensitive action par short-lived confirmation code.
+- Duplicate messages ignore (message id), expired commands reject.
+- Delivery status aur command history UI mein.
+- WhatsApp commands bhi section 7 ki central pipeline se guzarti hain, koi alag trading logic nahi.
+
+**Availability ki haqiqat:** "sab kuch PC par" aur "WhatsApp hamesha available" ek saath guarantee nahi ho sakte. PC band ya app band to local agent jawab nahi dega (messages 30 din buffer rahenge, par expired trade commands execute nahi hongi). Hamesha-on ke liye future architecture:
+`WhatsApp ⇄ cloud messaging gateway ⇄ secure connection ⇄ local desktop agent`.
+Cloud gateway sirf message relay aur status cache kare, trade execution local agent par hi ho. Cloud LLM use karne par chunda hua context PC se bahar provider tak jata hai, ye settings mein clearly likha ho aur account details bhejne se pehle hata di jayen.
+
+## 16. SaaS foundation (abhi sirf data model)
+Data model mein shuru se: **User → Workspace → Broker account → Strategy (version) → Setup → Action**. Har table mein `workspaceId`.
+Baad mein: tenant isolation, subscriptions/entitlements, AI usage aur spending limits, BYOK, device activation aur session revoke, data export/delete, DB migrations, signed application updates.
+Abhi billing aur cloud platform **nahi** banana. Maqsad sirf ye ke personal version ko baad mein rewrite na karna pare.
+
+## 17. UI/UX specification (colors se aage)
+Design spec mein ye sab define hoga (`design/` mein component spec alag file mein):
+- Typography scale, spacing, component states (default, hover, focus, active, disabled, loading, error).
+- Keyboard shortcuts (command palette `Ctrl+K`, timeframe switch, tool select, undo/redo) aur **visible focus ring**.
+- Screens: loading, empty, disconnected, stale-data, error, first-run onboarding.
+- High-DPI aur multi-monitor (chart ko alag window mein pop-out).
+- Resizable panels, chart labels jo har scale par parhne layak hon.
+- Destructive actions ki saaf wording ("Close all 3 XAUUSD positions at market", "Cancel" default focus).
+- Status sirf colour par nahi: icon + text bhi.
+
+## 18. Revised phases
+1. **Foundation:** Electron shell, tokens, layout, SQLite, data model (section 16), simulated feed, **central command bus** (idempotency, activity log).
+2. **Manual workspace:** drawing tools, layers, lock, undo/redo, autosave/recovery, multi-timeframe layouts.
+3. **AI read-only:** LLM adapter (capability flags), analysis card, data reference.
+4. **AI chart control:** capability matrix, preview/apply, Stop AI button, action log.
+5. **Risk engine + MT5 bridge (demo):** feed, positions, order state machine, reconciliation, SL/TP, partial, close.
+6. **Connector hub:** common contract, sessions, news/calendar, indexes, sentiment.
+7. **WhatsApp gateway:** notifications, AI chat, linking, confirmation codes, command history.
+8. **Strategy builder, setups, alerts, journal, replay/backtest** (future-candle gating).
+9. **Release:** Windows installer (CI), signed updates, backups, security review, live-account hardening.
+10. **SaaS foundations** (cloud gateway, local agent link, entitlements) jab personal version stable ho.
+
+## 19. Abhi ke open faisle
+1. Naam: "Aurum" theek hai ya aur options?
+2. Broker ka naam aur XAUUSD symbol (`XAUUSD`, `XAUUSDm`, `GOLD`).
+3. News/sentiment/calendar ke liye koi paid provider already hai?
+4. Daily-limit hit hone par existing positions ki default policy: sirf manage allowed, ya freeze?

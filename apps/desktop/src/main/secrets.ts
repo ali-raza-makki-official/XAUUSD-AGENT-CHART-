@@ -40,3 +40,22 @@ export function getKey(provider: ProviderId): string | null {
   try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
 }
 export const hasKey = (provider: ProviderId): boolean => getKey(provider) !== null;
+
+// --- WhatsApp agent API token (own entry in the same encrypted file; provider keys untouched) ---
+const WA_KEY = 'whatsapp';
+export function setWhatsAppToken(token: string): void {
+  if (!secureStorageAvailable()) throw new Error('Secure key storage is not available on this system, so the token was not saved.');
+  write({ ...read(), [WA_KEY]: safeStorage.encryptString(token.trim()).toString('base64') });
+}
+export function clearWhatsAppToken(): void {
+  const d = read();
+  delete d[WA_KEY];
+  write(d);
+}
+export function getWhatsAppToken(): string | null {
+  if (process.env.AURUM_WHATSAPP_TOKEN) return process.env.AURUM_WHATSAPP_TOKEN;
+  const enc = read()[WA_KEY];
+  if (!enc || !secureStorageAvailable()) return null;
+  try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
+}
+export const hasWhatsAppToken = (): boolean => getWhatsAppToken() !== null;

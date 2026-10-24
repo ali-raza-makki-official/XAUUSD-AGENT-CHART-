@@ -19,6 +19,9 @@ function open(): DatabaseSync {
   return handle;
 }
 
+/** Shared handle for modules that keep their own tables (WhatsApp gateway). */
+export const getDb = open;
+
 export function loadDrawings(symbol: string): { drawings: Drawing[]; commandIds: string[] } {
   const d = open();
   const drawings: Drawing[] = [];

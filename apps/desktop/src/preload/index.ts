@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC, type AurumApi } from '../shared';
+import { whatsAppPreload } from './whatsapp';
 
 const on =
   <T>(channel: string) =>
@@ -40,6 +41,7 @@ const api: AurumApi = {
   onTick: on(IPC.tick),
   onStatus: on(IPC.status),
   onAccount: on(IPC.account),
+  ...whatsAppPreload(ipcRenderer),
 };
 
 contextBridge.exposeInMainWorld('aurum', api);

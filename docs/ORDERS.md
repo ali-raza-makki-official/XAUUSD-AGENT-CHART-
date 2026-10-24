@@ -15,10 +15,20 @@
 - `packages/core/src/orders.ts`: `sizeOrder`, `partialCloseVolume` (step-safe, never >= position, valid remainder),
   `riskAtSl`, `slMoveAllowedAfterLimit` (manage_only: SL may not be widened/removed after the daily limit). Property-style tests.
 
-## NOT built (do not enable trading in the app yet)
-OrderCommand Zod pipeline with commandId registry/TTL, RiskGate, reconciliation loop, external-change sync,
-SQLite immutable activity log, IPC, Positions panel and confirm dialogs, `propose_order_action` AI tool, kill-switch wiring,
-`trading` settings flag. The main process does NOT start the bridge with `AURUM_TRADING`, so the app cannot trade.
+## Added in this iteration (packages/core only, tested with a fake broker)
+- `orderCommand.ts`: Zod `OrderCommand` (open_market, open_pending, modify_sltp, close_position, partial_close, cancel_pending; `close_all` is a separate bulk command), actor manual|ai|whatsapp, `commandId`, expiry (120 s), human-readable PREVIEW.
+- `riskGate.ts`: deterministic `evaluateGate` returning the exact failed rule (trading switch, demo/live, GOLD-only, actor/AI mode/permissions, kill switch, expiry, unresolved commands, missing SL, spread, slippage, volume, per-trade risk, open risk, max positions, daily loss with reset timezone, manage_only/freeze policies, SL widening after the limit).
+- `orderEngine.ts`: prepare -> confirm (idempotent registry with TTL, in-flight de-dup, serialised sends) -> reconcile via find (never resends; no-trace needs two checks apart), owner `resolve`, restore after restart, bulk close.
+- `orderTools.ts`: AI tool `propose_order_action` (PREVIEW only). It reports "unavailable" until the app supplies an `OrdersPort`, which it does NOT yet.
+- `orderPlan.ts` (position drawing -> order, multi-TP = one position + planned partial closes) and `positionSync.ts` (external-change diff). Both unit-level only.
+- Tests: `packages/core/test/orderEngine.test.ts` (duplicate never executes twice, unknown then retry reconciles without resend, SL not widened after limit, partial close step, AI suggest/kill switch/bulk permission, expiry, restore).
+
+## INCOMPLETE: stays DISABLED (no order path is reachable from the app)
+Not built, because the budget ran out: main-process `orders.ts` service, SQLite activity-log tables, IPC, Positions tab, Confirm dialog,
+"Place this order" button, `OrdersSettings`/Trading tab, AI-permission rows, `OrdersPort` wiring in `useAiChat`, Stop-AI to kill-switch wiring,
+`trading` settings flag, BridgeManager `AURUM_TRADING` env. The main process still does NOT start the bridge with `AURUM_TRADING`, so the app cannot trade.
+No Electron/Playwright run and no manual test plan were done. Nothing ran against real MT5.
+Live: `AURUM_ALLOW_LIVE` must never be set by the app; an expert would have to set it in the bridge environment by hand (not designed or confirmed here).
 
 ## Planned reconciliation rules
 Open: tagged deal/position/order => confirmed. Modify: position SL/TP equal requested => confirmed. Close/partial: tagged OUT

@@ -13,7 +13,7 @@ describe('database schema', () => {
   it('every table carries workspace_id (SaaS-ready)', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(SCHEMA_SQL);
-    for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]) {
+    for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]) {
       const cols = (db.prepare(`PRAGMA table_info(${name})`).all() as { name: string }[]).map((c) => c.name);
       expect(cols, name).toContain('workspace_id');
     }

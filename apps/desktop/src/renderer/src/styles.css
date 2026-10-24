@@ -256,3 +256,4 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .indname { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .outrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 36px 60px; gap: 8px; align-items: center; }
 .rtab { padding: 0 4px; font-size: 12px; }
+.ometa { max-width: 38%; overflow: hidden; text-overflow: ellipsis; }

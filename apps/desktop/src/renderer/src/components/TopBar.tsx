@@ -1,4 +1,4 @@
-import { CircleAlert, LoaderCircle, OctagonX, Settings as Cog, ShieldCheck, TriangleAlert, Wifi, WifiOff, CircleDot, SaveOff } from 'lucide-react';
+import { CircleAlert, LoaderCircle, OctagonX, Settings as Cog, ShieldCheck, TriangleAlert, Wifi, WifiOff, CircleDot, Play, SaveOff } from 'lucide-react';
 import { TIMEFRAMES, type AccountInfo, type AppConfig, type FeedStatus, type Tick, type Timeframe } from '@aurum/core';
 import { Chip, IconButton, Segmented, Tip, Button } from './ui';
 
@@ -23,9 +23,12 @@ interface Props {
   account: AccountInfo | null;
   saveError: string | null;
   onSettings: () => void;
+  aiPaused: boolean;
+  aiRunning: boolean;
+  onToggleAi: () => void;
 }
 
-export function TopBar({ config, tf, onTf, tick, status, account, saveError, onSettings }: Props) {
+export function TopBar({ config, tf, onTf, tick, status, account, saveError, onSettings, aiPaused, aiRunning, onToggleAi }: Props) {
   const pip = config?.pipSize ?? 0.1;
   return (
     <header className="topbar">
@@ -51,8 +54,10 @@ export function TopBar({ config, tf, onTf, tick, status, account, saveError, onS
       ) : <Chip>No account</Chip>}
       {saveError && <Chip tone="danger" icon={SaveOff} title={saveError}>Save failed</Chip>}
       <StatusChip status={status} />
-      <Tip label="Stops new AI actions. Existing positions are not touched.">
-        <Button variant="danger" size="sm" icon={OctagonX} disabled>Stop AI</Button>
+      <Tip label={aiPaused ? 'AI actions are stopped. Click to allow the AI to act again.' : 'Stops the AI immediately and blocks new AI actions. Positions are not touched.'}>
+        {aiPaused
+          ? <Button size="sm" icon={Play} onClick={onToggleAi}>Resume AI</Button>
+          : <Button variant="danger" size="sm" icon={OctagonX} onClick={onToggleAi}>{aiRunning ? 'Stop AI now' : 'Stop AI'}</Button>}
       </Tip>
       <IconButton label="Settings" onClick={onSettings}><Cog size={16} strokeWidth={1.8} /></IconButton>
     </header>

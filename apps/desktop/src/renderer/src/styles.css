@@ -234,3 +234,11 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .ac-price { color: var(--gold); font-weight: 600; min-width: 64px; }
 .ac-f { padding: 8px 12px; color: var(--t3); font-size: 11px; }
 .tabs-sm { margin-bottom: 4px; }
+
+.perm { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.perm > div { display: grid; gap: 2px; min-width: 0; }
+.perm.off { opacity: .6; }
+.banner-ok { background: var(--buy-bg); color: var(--buy); border: 1px solid rgba(46,189,133,.35); border-radius: var(--r-sm); user-select: text; }
+.dialog-h { gap: 12px; }
+.dialog-h h3 { margin-right: auto; }
+.msgs > * { flex-shrink: 0; }

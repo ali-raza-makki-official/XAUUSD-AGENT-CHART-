@@ -4,11 +4,14 @@ import { useCandles, useFeed } from './hooks';
 import { useDrawings } from './useDrawings';
 import { TopBar } from './components/TopBar';
 import { ChartView } from './components/ChartView';
-import { BottomPanel, ChatPanel } from './components/Panels';
+import { BottomPanel } from './components/Panels';
 import { SettingsDialog } from './components/Settings';
 import { Toolbar } from './components/Toolbar';
 import { Bot, Layers, SlidersHorizontal, Unplug, LoaderCircle, Monitor } from 'lucide-react';
 import { Inspector, InspectorEmpty } from './components/Inspector';
+import { ChatPanel } from './components/ChatPanel';
+import { useAiChat } from './useAiChat';
+import { PROVIDERS } from '@aurum/core';
 import { Button } from './components/ui';
 import { ObjectsPanel } from './components/Objects';
 import type { ToolId } from './lib/tools';
@@ -21,7 +24,9 @@ export function App() {
   const tf: Timeframe = tfOverride ?? config?.timeframe ?? 'M15';
   const live = status.state === 'connected' || status.state === 'stale';
   const { candles, error, loading } = useCandles(tf, live);
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState<false | 'general' | 'ai'>(false);
+  const [aiPaused, setAiPaused] = useState(false);
+  const [hasKey, setHasKey] = useState<Record<string, boolean>>({});
 
   const symbol = config?.symbol ?? 'XAUUSD';
   const { store, drawings, dispatch, canUndo, canRedo, saveError } = useDrawings(api, symbol);
@@ -45,6 +50,11 @@ export function App() {
     wasSelected.current = !!selected;
   }, [selected, selectedId, rightTab]);
 
+  const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused });
+  useEffect(() => { if (api && !settings) void api.aiStatus().then((s) => setHasKey(s.hasKey)); }, [api, settings]);
+  const aiProvider = config?.ai.provider ?? null;
+  const aiReady = !!aiProvider && !!hasKey[aiProvider];
+
   const pickTf = (t: Timeframe) => { setTf(t); void update({ timeframe: t }); };
   const select = (id: string | null) => { setSelectedId(id); if (id) setRightTab('inspector'); };
   const patch = (id: string, p: Record<string, unknown>, label: string) => dispatch([{ op: 'update', id, patch: p }], label);
@@ -64,7 +74,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar config={config} tf={tf} onTf={pickTf} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings(true)} />
+      <TopBar config={config} tf={tf} onTf={pickTf} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings('general')} aiPaused={aiPaused} aiRunning={chat.running} onToggleAi={() => setAiPaused((p) => !p)} />
       <Toolbar
         tool={tool} onTool={setTool}
         canUndo={canUndo} canRedo={canRedo} onUndo={() => store.undo()} onRedo={() => store.redo()}
@@ -111,7 +121,13 @@ export function App() {
           <button role="tab" className="rtab" aria-selected={rightTab === 'inspector'} onClick={() => setRightTab('inspector')}><SlidersHorizontal size={15} />Inspector</button>
         </div>
         <div className="rbody">
-          {rightTab === 'chat' && <ChatPanel />}
+          {rightTab === 'chat' && (
+            <ChatPanel
+              chat={chat} ready={aiReady} providerLabel={aiProvider ? PROVIDERS[aiProvider].label : null}
+              model={aiProvider ? (config?.ai.models[aiProvider] || PROVIDERS[aiProvider].suggestedModel) : ''}
+              paused={aiPaused} canDraw={!!config?.aiPermissions.drawingsEdit} onResume={() => setAiPaused(false)} onSettings={() => setSettings('ai')}
+            />
+          )}
           {rightTab === 'objects' && (
             <ObjectsPanel
               drawings={drawings} selectedId={selectedId} hiddenLayers={hiddenLayers}
@@ -124,8 +140,8 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} />
-      {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} onClose={() => setSettings(false)} />}
+      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} />
+      {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} initialTab={settings} onClose={() => setSettings(false)} />}
     </div>
   );
 }

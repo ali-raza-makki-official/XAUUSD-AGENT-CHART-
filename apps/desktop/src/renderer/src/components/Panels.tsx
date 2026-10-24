@@ -1,24 +1,7 @@
 import { useState } from 'react';
-import { Bell, BookOpen, Bot, ChevronDown, ChevronUp, History, ListChecks, ScrollText, SendHorizontal, type LucideIcon } from 'lucide-react';
+import { Bell, BookOpen, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
-import { Chip, EmptyState, IconButton, Button } from './ui';
-
-export function ChatPanel() {
-  return (
-    <div className="chat" aria-label="AI chat">
-      <div className="body">
-        <EmptyState icon={Bot} title="AI assistant not connected">
-          Add an AI provider in Settings and it will read this chart, your drawings and the live feed, and be able to draw and analyse for you.
-          <div style={{ marginTop: 10 }}><Chip tone="ai">Read-only until you allow more</Chip></div>
-        </EmptyState>
-      </div>
-      <div className="composer">
-        <textarea className="textarea" disabled placeholder="Connect an AI provider to start" aria-label="Message to AI" />
-        <Button variant="primary" icon={SendHorizontal} disabled aria-label="Send">Send</Button>
-      </div>
-    </div>
-  );
-}
+import { EmptyState, IconButton, Button } from './ui';
 
 const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
   { id: 'feed', label: 'Feed log', icon: ScrollText, empty: 'No feed events yet.' },
@@ -30,7 +13,9 @@ const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
 
 const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : /^STALE/.test(t) ? 'var(--warn)' : /^CONNECTED/.test(t) ? 'var(--buy)' : 'var(--t2)');
 
-export function BottomPanel({ log }: { log: LogLine[] }) {
+export interface AiAction { at: number; label: string }
+
+export function BottomPanel({ log, aiActions, onUndoAllAi }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -54,6 +39,11 @@ export function BottomPanel({ log }: { log: LogLine[] }) {
               const [lvl, ...rest] = l.text.split(' — ');
               return <div key={i}><span className="t">{new Date(l.at).toLocaleTimeString()}</span><span className="lvl" style={{ color: LEVEL(l.text) }}>{lvl}</span>{rest.join(' — ')}</div>;
             })}</div>
+          ) : tab === 'ai' && aiActions.length ? (
+            <div>
+              <div className="row" style={{ marginBottom: 6 }}><Button size="sm" icon={Undo2} onClick={onUndoAllAi}>Undo all AI changes today</Button></div>
+              <div className="log">{[...aiActions].reverse().map((a, i) => <div key={i}><span className="t">{new Date(a.at).toLocaleTimeString()}</span>{a.label}</div>)}</div>
+            </div>
           ) : <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}

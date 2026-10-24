@@ -1,0 +1,2 @@
+# Windows only. Needs the MetaTrader 5 terminal installed, running and logged in.
+MetaTrader5>=5.0.45

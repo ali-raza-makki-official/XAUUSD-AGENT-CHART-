@@ -6,12 +6,16 @@ broker data only; if the terminal is unavailable it raises FeedError and callers
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from typing import Any, Optional
 
 TIMEFRAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
 MAX_CANDLES = 5000
+MAX_QUOTE_SYMBOLS = 12
+# MT5 symbol names: letters, digits and a few separators (e.g. US500.cash, #USTEC, DXY.f, XAUUSDm).
+_SYMBOL_OK = re.compile(r"^[A-Za-z0-9._#@!$&+\-]{1,32}$")
 RECONNECT_MIN_INTERVAL = 2.0
 
 
@@ -185,3 +189,58 @@ class Mt5Feed:
             syms = mt5.symbols_get() or []
             wanted = [n.upper() for n in needles]
             return sorted(s.name for s in syms if any(w in s.name.upper() for w in wanted))[:50]
+
+    def quotes(self, symbols: list[str]) -> dict:
+        """Latest bid/ask for any broker symbols (related markets: DXY, US10Y, oil, indices, silver).
+
+        Real MT5 data only. Each symbol answers on its own: a symbol the broker does not have comes back
+        with ok=False and a reason, never with a made-up price. prevClose is the previous completed D1
+        close when MT5 provides it, so the app can show a real % change.
+        """
+        wanted: list[str] = []
+        for s in symbols:
+            s = s.strip()
+            if not s:
+                continue
+            if not _SYMBOL_OK.match(s):
+                raise ValueError(f"Invalid symbol name '{s}'")
+            if s not in wanted:
+                wanted.append(s)
+        if not wanted:
+            raise ValueError("No symbols given")
+        if len(wanted) > MAX_QUOTE_SYMBOLS:
+            raise ValueError(f"At most {MAX_QUOTE_SYMBOLS} symbols per request")
+        self.ensure_connected()
+        out = []
+        with self._lock:
+            mt5 = self._module()
+            for name in wanted:
+                if mt5.symbol_info(name) is None:
+                    out.append({"symbol": name, "ok": False, "error": f"Symbol '{name}' not found on this broker. Use Find symbols in Settings."})
+                    continue
+                # Adds the symbol to Market Watch (needed for MT5 to stream a tick for it).
+                if not mt5.symbol_select(name, True):
+                    out.append({"symbol": name, "ok": False, "error": f"Could not add '{name}' to Market Watch: {mt5.last_error()}"})
+                    continue
+                t = mt5.symbol_info_tick(name)
+                if t is None or (t.bid == 0 and t.ask == 0):
+                    out.append({"symbol": name, "ok": False, "error": f"No tick for '{name}' (market closed or no data subscription)."})
+                    continue
+                tms = getattr(t, "time_msc", 0)
+                prev = None
+                try:
+                    rates = mt5.copy_rates_from_pos(name, getattr(mt5, "TIMEFRAME_D1"), 0, 2)
+                    if rates is not None and len(rates) == 2:
+                        prev = float(rates[0]["close"])
+                except Exception:  # prevClose is optional; its absence must not hide a good quote
+                    prev = None
+                out.append({
+                    "symbol": name,
+                    "ok": True,
+                    "bid": float(t.bid),
+                    "ask": float(t.ask),
+                    "time": tms / 1000.0 if tms else float(t.time),
+                    "prevClose": prev,
+                    "error": None,
+                })
+        return {"quotes": out}

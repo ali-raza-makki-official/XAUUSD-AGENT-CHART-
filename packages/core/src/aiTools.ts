@@ -4,6 +4,7 @@ import { DrawingStore, type DrawingOp } from './drawingStore';
 import { DrawingSchema, makeDrawing, positionIssues, rewardRisk, type Drawing } from './drawing';
 import { lotsForRisk, priceToPips, type ContractSpec } from './risk';
 import { TimeframeSchema, type Candle, type Timeframe } from './feed';
+import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
 
 /**
  * The only way the AI touches the app. Every tool validates its input with Zod, checks the capability
@@ -99,6 +100,8 @@ export interface ToolContext {
   startOfToday(): number;
   newId?: () => string;
   now?: () => number;
+  /** Market context (sessions, calendar, news, sentiment, related markets). Absent = tools report unavailable. */
+  context?: ContextAccess;
 }
 
 export type ToolResult = { ok: true; data: unknown } | { ok: false; code: 'permission_denied' | 'invalid_input' | 'rejected' | 'unavailable'; error: string };
@@ -280,6 +283,8 @@ export const AI_TOOLS: AiTool[] = [
     },
   },
 ];
+
+AI_TOOLS.push(...CONTEXT_TOOLS);
 
 export function runAiTool(ctx: ToolContext, name: string, rawInput: unknown): Promise<ToolResult> | ToolResult {
   const tool = AI_TOOLS.find((t) => t.name === name);

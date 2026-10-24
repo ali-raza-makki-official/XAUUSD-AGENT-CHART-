@@ -181,4 +181,9 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
     const d = (await this.get(`/symbols?q=${encodeURIComponent(query)}`)) as { symbols?: string[] };
     return d.symbols ?? [];
   }
+
+  /** Raw related-market quotes from MT5 (validated by the connector in core). */
+  async quotes(symbols: string[]): Promise<unknown> {
+    return this.get(`/quotes?symbols=${encodeURIComponent(symbols.join(','))}`);
+  }
 }

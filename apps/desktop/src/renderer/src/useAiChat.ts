@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AiPermissionsSchema, buildSystemPrompt, repairHistory, runAgent, runAiTool, toolCatalog,
+  AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, repairHistory, runAgent, runAiTool, toolCatalog,
   type AccountInfo, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
   type FeedStatus, type Tick, type Timeframe,
 } from '@aurum/core';
@@ -79,7 +79,13 @@ export function useAiChat(deps: ChatDeps) {
     const toolCtx = () => ({
       store: st().store, permissions: perms(), getState: state,
       getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
-      getSpec: () => st().spec, startOfToday, exposeBalance: st().config?.ai.sendBalance ?? false,
+      getSpec: () => st().spec, startOfToday,
+      context: {
+        getSessions: () => st().api!.contextRead('sessions'),
+        getFeeds: (k: 'calendar' | 'news' | 'sentiment') => st().api!.contextRead(k) as Promise<never>,
+        getRelated: () => st().api!.contextRead('related'),
+        noTrade: st().config?.context.noTrade ?? NoTradeRuleSchema.parse({}),
+      }, exposeBalance: st().config?.ai.sendBalance ?? false,
     });
 
     const s = state();

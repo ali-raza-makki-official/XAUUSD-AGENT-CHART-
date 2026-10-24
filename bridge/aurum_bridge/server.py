@@ -49,6 +49,9 @@ def make_handler(feed: Mt5Feed, token: str, dev: bool):
                 if url.path == "/symbols":
                     needles = (q.get("q", ["XAU,GOLD"])[0]).split(",")
                     return self._send(200, {"symbols": feed.find_symbols(needles)})
+                if url.path == "/quotes":
+                    syms = [x for raw in q.get("symbols", [""]) for x in raw.split(",")]
+                    return self._send(200, feed.quotes(syms))
                 if url.path == "/candles":
                     tf = q.get("tf", ["M15"])[0]
                     count = int(q.get("count", ["500"])[0])

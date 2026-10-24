@@ -3,6 +3,7 @@ import { Search, X } from 'lucide-react';
 import { DEFAULT_STYLES, DRAWING_KINDS, type AppConfig, type DrawingKind, type Style } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 import { Button, Chip, IconButton, Segmented } from './ui';
+import { ConnectorsSettings } from './ConnectorsSettings';
 
 interface Props {
   api: AurumApi;
@@ -75,6 +76,7 @@ export function SettingsDialog({ api, config, onSave, onClose }: Props) {
             </div>
             <span className="hint">Applies to drawings you create from now on. Existing drawings keep their own style.</span>
           </div>
+          <ConnectorsSettings api={api} config={config} onSave={onSave} />
         </div>
         <div className="dialog-f">
           <Button onClick={onClose}>Cancel</Button>

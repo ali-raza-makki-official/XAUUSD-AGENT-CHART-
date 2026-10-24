@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Bell, BookOpen, Bot, ChevronDown, ChevronUp, History, ListChecks, ScrollText, SendHorizontal, type LucideIcon } from 'lucide-react';
+import { Bell, BookOpen, Globe2, Bot, ChevronDown, ChevronUp, History, ListChecks, ScrollText, SendHorizontal, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { Chip, EmptyState, IconButton, Button } from './ui';
+import { ContextPanel } from './ContextPanel';
+import type { AppConfig } from '@aurum/core';
+import type { AurumApi } from '../../../shared';
 
 export function ChatPanel() {
   return (
@@ -21,6 +24,7 @@ export function ChatPanel() {
 }
 
 const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
+  { id: 'context', label: 'Context', icon: Globe2, empty: '' },
   { id: 'feed', label: 'Feed log', icon: ScrollText, empty: 'No feed events yet.' },
   { id: 'alerts', label: 'Alerts', icon: Bell, empty: 'No alerts yet. Alerts and schedules will appear here.' },
   { id: 'setups', label: 'Setups', icon: ListChecks, empty: 'No saved setups yet.' },
@@ -30,7 +34,7 @@ const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
 
 const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : /^STALE/.test(t) ? 'var(--warn)' : /^CONNECTED/.test(t) ? 'var(--buy)' : 'var(--t2)');
 
-export function BottomPanel({ log }: { log: LogLine[] }) {
+export function BottomPanel({ log, api, config }: { log: LogLine[]; api?: AurumApi; config?: AppConfig | null }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -49,12 +53,13 @@ export function BottomPanel({ log }: { log: LogLine[] }) {
       </div>
       {open && (
         <div className="content" role="tabpanel">
+          {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
             <div className="log">{log.map((l, i) => {
               const [lvl, ...rest] = l.text.split(' — ');
               return <div key={i}><span className="t">{new Date(l.at).toLocaleTimeString()}</span><span className="lvl" style={{ color: LEVEL(l.text) }}>{lvl}</span>{rest.join(' — ')}</div>;
             })}</div>
-          ) : <EmptyState icon={cur.icon} title={cur.empty} />}
+          ) : tab !== 'context' && <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}
     </section>

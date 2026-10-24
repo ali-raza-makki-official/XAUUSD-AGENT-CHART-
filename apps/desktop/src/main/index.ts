@@ -1,17 +1,19 @@
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { AiPermissionsSchema, AiSettingsSchema, DrawingSchema, PROVIDER_IDS, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { AiPermissionsSchema, AiSettingsSchema, ContextSettingsSchema, DrawingSchema, PROVIDER_IDS, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
 import { closeDb, loadChat, loadDrawings, persist, saveChat } from './db';
 import * as llm from './llm';
-import { clearKey, hasKey, secureStorageAvailable, setKey } from './secrets';
+import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey } from './secrets';
+import { ContextHub } from './contextHub';
 import { IPC } from '../shared';
 
 let config: AppConfig;
 const bridge = new BridgeManager();
+let hub: ContextHub;
 let win: BrowserWindow | null = null;
 
 const CSP =
@@ -62,11 +64,13 @@ function registerIpc(): void {
         stayInTool: z.boolean(),
         aiPermissions: AiPermissionsSchema,
         ai: AiSettingsSchema,
+        context: ContextSettingsSchema,
       })
       .partial()
       .parse(patch);
     const symbolChanged = allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol;
     config = saveConfig(allowed, config);
+    if (allowed.context) hub.sync();
     if (symbolChanged) await bridge.start(config.brokerSymbol);
     return config;
   });
@@ -106,6 +110,15 @@ function registerIpc(): void {
     return llm.chat(config, z.string().min(1).max(64).parse(id), parsed as never);
   });
   ipcMain.handle(IPC.aiAbort, (_e, id: unknown) => llm.abort(z.string().parse(id)));
+  const kindId = z.enum(['sessions', 'calendar', 'news', 'sentiment', 'related']);
+  const known = (v: unknown) => { const id = z.string().min(2).max(64).parse(v); if (!hub.registry.has(id) || id === 'sessions' || id === 'related-markets') throw new Error('Unknown connector.'); return id; };
+  ipcMain.handle(IPC.contextSnapshot, (_e, force: unknown) => hub.snapshot(force === true));
+  ipcMain.handle(IPC.contextRead, (_e, k: unknown, force: unknown) => hub.read(kindId.parse(k), force === true));
+  ipcMain.handle(IPC.contextStatus, () => hub.status());
+  ipcMain.handle(IPC.contextTest, (_e, id: unknown) => hub.test(z.string().min(2).max(64).parse(id)));
+  ipcMain.handle(IPC.contextRefresh, () => hub.refresh(true));
+  ipcMain.handle(IPC.contextSetSecret, (_e, id: unknown, v: unknown) => setConnectorSecret(known(id), z.string().min(1).max(2000).parse(v)));
+  ipcMain.handle(IPC.contextClearSecret, (_e, id: unknown) => clearConnectorSecret(known(id)));
   ipcMain.handle(IPC.loadChat, () => loadChat());
   ipcMain.handle(IPC.saveChat, (_e, j: unknown) => saveChat(z.string().max(5_000_000).parse(j)));
   ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol));
@@ -129,12 +142,15 @@ else {
     session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
       cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [CSP] } });
     });
+    hub = new ContextHub(() => config, bridge);
     registerIpc();
     createWindow();
+    hub.start();
     await bridge.start(config.brokerSymbol);
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
+    hub?.stop();
     void bridge.stop();
     closeDb();
   });

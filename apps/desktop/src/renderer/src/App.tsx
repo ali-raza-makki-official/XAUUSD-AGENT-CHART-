@@ -124,7 +124,7 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} />
+      <BottomPanel log={log} api={api} config={config} />
       {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} onClose={() => setSettings(false)} />}
     </div>
   );

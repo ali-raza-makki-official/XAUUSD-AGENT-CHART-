@@ -12,8 +12,8 @@ let db: DatabaseSync | null = null;
 function open(): DatabaseSync {
   if (db) return db;
   mkdirSync(app.getPath('userData'), { recursive: true });
-  db = new DatabaseSync(join(app.getPath('userData'), 'aurum.db'));
-  db.exec(`
+  const handle = new DatabaseSync(join(app.getPath('userData'), 'aurum.db'));
+  handle.exec(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS drawings (
       id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, symbol TEXT NOT NULL,
@@ -53,8 +53,14 @@ function open(): DatabaseSync {
       id TEXT NOT NULL, workspace_id TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL,
       PRIMARY KEY (id, workspace_id)
     );
+    CREATE TABLE IF NOT EXISTS context_cache (
+      workspace_id TEXT NOT NULL, connector_id TEXT NOT NULL, source TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL, sig TEXT NOT NULL, json TEXT NOT NULL,
+      PRIMARY KEY (workspace_id, connector_id)
+    );
   `);
-  return db;
+  db = handle;
+  return handle;
 }
 
 export function loadDrawings(symbol: string): { drawings: Drawing[]; commandIds: string[] } {
@@ -244,4 +250,22 @@ export function saveNotification(e: NotificationLogEntry): void {
   const d = open();
   d.prepare('INSERT OR REPLACE INTO notifications (id, workspace_id, at, json) VALUES (?, ?, ?, ?)').run(e.event.id, WORKSPACE, e.event.at, JSON.stringify(e));
   d.prepare('DELETE FROM notifications WHERE workspace_id = ? AND id NOT IN (SELECT id FROM notifications WHERE workspace_id = ? ORDER BY at DESC LIMIT 500)').run(WORKSPACE, WORKSPACE);
+}
+
+/** Last real fetch per market-context connector (news, calendar, sentiment). Shown as stale after a restart, never as fresh. */
+export function saveContextCache(connectorId: string, e: { source: string; fetchedAt: number; sig: string; data: unknown }): void {
+  open().prepare(
+    'INSERT INTO context_cache (workspace_id, connector_id, source, fetched_at, sig, json) VALUES (?, ?, ?, ?, ?, ?) ' +
+      'ON CONFLICT(workspace_id, connector_id) DO UPDATE SET source = excluded.source, fetched_at = excluded.fetched_at, sig = excluded.sig, json = excluded.json',
+  ).run(WORKSPACE, connectorId, e.source, e.fetchedAt, e.sig, JSON.stringify(e.data));
+}
+export function loadContextCache(connectorId: string): { source: string; fetchedAt: number; sig: string; data: unknown } | null {
+  const r = open().prepare('SELECT source, fetched_at, sig, json FROM context_cache WHERE workspace_id = ? AND connector_id = ?').get(WORKSPACE, connectorId) as
+    | { source: string; fetched_at: number; sig: string; json: string }
+    | undefined;
+  if (!r) return null;
+  try { return { source: String(r.source), fetchedAt: Number(r.fetched_at), sig: String(r.sig), data: JSON.parse(String(r.json)) }; } catch { return null; }
+}
+export function deleteContextCache(connectorId: string): void {
+  open().prepare('DELETE FROM context_cache WHERE workspace_id = ? AND connector_id = ?').run(WORKSPACE, connectorId);
 }

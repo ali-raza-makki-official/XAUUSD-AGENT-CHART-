@@ -113,6 +113,9 @@ def make_handler(feed: Mt5Feed, token: str, dev: bool, trader: Mt5Trader | None 
                     ticket = q.get("ticket", [None])[0]
                     since = q.get("since", [None])[0]
                     return self._send(200, trader.evidence(cid, int(ticket) if ticket else None, float(since) if since else None))
+                if url.path == "/quotes":
+                    syms = [x for raw in q.get("symbols", [""]) for x in raw.split(",")]
+                    return self._send(200, feed.quotes(syms))
                 if url.path == "/candles":
                     tf = q.get("tf", ["M15"])[0]
                     count = int(q.get("count", ["500"])[0])

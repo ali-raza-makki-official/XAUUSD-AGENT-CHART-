@@ -1,4 +1,34 @@
-import type { AccountInfo, AppConfig, Candle, Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, ProviderId, SymbolSpec, Tick, Timeframe } from '@aurum/core';
+import type {
+  AccountInfo, AppConfig, Candle, CalendarEvent, ConnectionTest, ConnectorHealth, ConnectorKind, ConnectorManifest, ConnectorResult, ContextSource,
+  Drawing, FeedStatus, Indicator, LlmRequest, LlmResponse, NewsItem, ProviderId, RelatedMarkets, SentimentReading, SessionsSnapshot, SymbolSpec, Tick, Timeframe,
+} from '@aurum/core';
+
+export type ContextKindId = 'sessions' | 'calendar' | 'news' | 'sentiment' | 'related';
+/** Everything the Context panel and the AI tools read. Each datapoint inside carries source + fetchedAt. */
+export interface ContextSnapshot {
+  at: number;
+  sessions: ConnectorResult<SessionsSnapshot>;
+  calendar: ContextSource<CalendarEvent>[];
+  news: ContextSource<NewsItem>[];
+  sentiment: ContextSource<SentimentReading>[];
+  related: ConnectorResult<RelatedMarkets>;
+}
+/** What Settings shows per connector. Never contains a secret, only whether one is saved. */
+export interface ConnectorStatus {
+  id: string;
+  name: string;
+  kind: ConnectorKind;
+  builtin: 'sessions' | 'related' | null;
+  enabled: boolean;
+  configured: boolean;
+  issues: string[];
+  health: ConnectorHealth;
+  needsSecret: boolean;
+  hasSecret: boolean;
+  rateLimit: ConnectorManifest['rateLimit'];
+  cacheTtlMs: number;
+  permissions: ConnectorManifest['permissions'];
+}
 
 /** The only surface the renderer gets from the main process (see preload). */
 export interface AurumApi {
@@ -27,6 +57,13 @@ export interface AurumApi {
   aiTest(provider: ProviderId): Promise<{ ms: number; reply: string }>;
   aiChat(requestId: string, req: LlmRequest): Promise<LlmResponse>;
   aiAbort(requestId: string): Promise<void>;
+  contextSnapshot(force?: boolean): Promise<ContextSnapshot>;
+  contextRead<K extends ContextKindId>(kind: K, force?: boolean): Promise<ContextSnapshot[K]>;
+  contextStatus(): Promise<ConnectorStatus[]>;
+  contextTest(id: string): Promise<ConnectionTest>;
+  contextRefresh(): Promise<void>;
+  contextSetSecret(id: string, value: string): Promise<void>;
+  contextClearSecret(id: string): Promise<void>;
   loadChat(): Promise<string | null>;
   saveChat(json: string): Promise<void>;
   onTick(cb: (t: Tick) => void): () => void;
@@ -55,6 +92,13 @@ export const IPC = {
   aiTest: 'ai:test',
   aiChat: 'ai:chat',
   aiAbort: 'ai:abort',
+  contextSnapshot: 'ctx:snapshot',
+  contextRead: 'ctx:read',
+  contextStatus: 'ctx:status',
+  contextTest: 'ctx:test',
+  contextRefresh: 'ctx:refresh',
+  contextSetSecret: 'ctx:setSecret',
+  contextClearSecret: 'ctx:clearSecret',
   loadChat: 'chat:load',
   saveChat: 'chat:save',
   tick: 'feed:tick',

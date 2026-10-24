@@ -59,3 +59,24 @@ export function getWhatsAppToken(): string | null {
   try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
 }
 export const hasWhatsAppToken = (): boolean => getWhatsAppToken() !== null;
+/**
+ * Connector secrets (API keys / auth header values for news, calendar and sentiment feeds).
+ * Same encrypted file and same rules as the AI provider keys, under a "connector:" prefix so the two never mix.
+ * Never sent to the renderer, never logged.
+ */
+const connectorKey = (id: string) => `connector:${id}`;
+export function setConnectorSecret(id: string, value: string): void {
+  if (!secureStorageAvailable()) throw new Error('Secure key storage is not available on this system, so the key was not saved.');
+  write({ ...read(), [connectorKey(id)]: safeStorage.encryptString(value.trim()).toString('base64') });
+}
+export function clearConnectorSecret(id: string): void {
+  const d = read();
+  delete d[connectorKey(id)];
+  write(d);
+}
+export function getConnectorSecret(id: string): string | null {
+  const enc = read()[connectorKey(id)];
+  if (!enc || !secureStorageAvailable()) return null;
+  try { return safeStorage.decryptString(Buffer.from(enc, 'base64')); } catch { return null; }
+}
+export const hasConnectorSecret = (id: string): boolean => getConnectorSecret(id) !== null;

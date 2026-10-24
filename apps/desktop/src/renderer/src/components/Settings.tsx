@@ -6,6 +6,7 @@ import {
 } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 import { Button, Chip, IconButton, Section, Segmented, Switch } from './ui';
+import { ConnectorsSettings } from './ConnectorsSettings';
 
 interface Props {
   api: AurumApi;
@@ -15,7 +16,7 @@ interface Props {
   initialTab?: TabId;
 }
 
-export type TabId = 'general' | 'styles' | 'ai';
+export type TabId = 'general' | 'styles' | 'ai' | 'connectors';
 
 function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSave: Props['onSave'] }) {
   const [ai, setAi] = useState<AiSettings>(config.ai);
@@ -140,7 +141,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
       <div className="dialog" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="dialog-h">
           <h3>Settings</h3>
-          <Segmented<TabId> label="Settings section" size="sm" value={tab} onChange={setTab} options={[{ value: 'general', label: 'General' }, { value: 'styles', label: 'Drawing styles' }, { value: 'ai', label: 'AI' }]} />
+          <Segmented<TabId> label="Settings section" size="sm" value={tab} onChange={setTab} options={[{ value: 'general', label: 'General' }, { value: 'styles', label: 'Drawing styles' }, { value: 'ai', label: 'AI' }, { value: 'connectors', label: 'Connectors' }]} />
           <IconButton label="Close settings" onClick={onClose}><X size={16} /></IconButton>
         </div>
         <div className="dialog-b">
@@ -187,10 +188,11 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
             </div>
           )}
           {tab === 'ai' && <AiTab api={api} config={config} onSave={onSave} />}
+          {tab === 'connectors' && <ConnectorsSettings api={api} config={config} onSave={onSave} />}
         </div>
         <div className="dialog-f">
-          <Button onClick={onClose}>{tab === 'ai' ? 'Close' : 'Cancel'}</Button>
-          {tab !== 'ai' && <Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
+          <Button onClick={onClose}>{tab === 'ai' || tab === 'connectors' ? 'Close' : 'Cancel'}</Button>
+          {tab !== 'ai' && tab !== 'connectors' && <Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
         </div>
       </div>
     </div>

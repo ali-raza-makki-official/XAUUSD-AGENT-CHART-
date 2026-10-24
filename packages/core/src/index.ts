@@ -20,3 +20,8 @@ export * from './orders';
 export * from './outbound';
 export * from './whatsapp';
 export * from './whatsappCommands';
+export * from './sessions';
+export * from './connectors';
+export * from './marketContext';
+export * from './contextConnectors';
+export * from './contextTools';

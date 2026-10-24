@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { Bell, BookOpen, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
+import { Bell, BookOpen, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
+import { ContextPanel } from './ContextPanel';
+import type { AppConfig } from '@aurum/core';
+import type { AurumApi } from '../../../shared';
 
 const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
+  { id: 'context', label: 'Context', icon: Globe2, empty: '' },
   { id: 'feed', label: 'Feed log', icon: ScrollText, empty: 'No feed events yet.' },
   { id: 'alerts', label: 'Alerts', icon: Bell, empty: 'No alerts yet. Alerts and schedules will appear here.' },
   { id: 'setups', label: 'Setups', icon: ListChecks, empty: 'No saved setups yet.' },
@@ -15,7 +19,7 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void }) {
+export function BottomPanel({ log, aiActions, onUndoAllAi, api, config }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -34,6 +38,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi }: { log: LogLine[]; a
       </div>
       {open && (
         <div className="content" role="tabpanel">
+          {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
             <div className="log">{log.map((l, i) => {
               const [lvl, ...rest] = l.text.split(' — ');
@@ -44,7 +49,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi }: { log: LogLine[]; a
               <div className="row" style={{ marginBottom: 6 }}><Button size="sm" icon={Undo2} onClick={onUndoAllAi}>Undo all AI changes today</Button></div>
               <div className="log">{[...aiActions].reverse().map((a, i) => <div key={i}><span className="t">{new Date(a.at).toLocaleTimeString()}</span>{a.label}</div>)}</div>
             </div>
-          ) : <EmptyState icon={cur.icon} title={cur.empty} />}
+          ) : tab !== 'context' && <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}
     </section>

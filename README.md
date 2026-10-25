@@ -11,7 +11,7 @@ Checked in a real Electron run (against test-only stand-ins; nothing was run aga
 
 Wired and compiled, tests pass, but NOT checked in a running app:
 - Indicators and 1/2/4-chart layouts (looked at once after the merge).
-- WhatsApp gateway (`docs/WHATSAPP.md`): tested only against a mock server; the end-to-end Electron run did not complete.
+- WhatsApp gateway (`docs/WHATSAPP.md`): the full flow (pairing, commands, AI answers, 1/2 options, formatting, history, closing message) passed in a real Electron run against a mock WhatsApp server; never against the real platform.
 - Connectors (`docs/CONNECTORS.md`): the sessions clock works locally; calendar, news and sentiment need a provider URL from you.
 
 Orders (demo only, wired this session; checked in a real Electron run against the bridge test fake, NOT against real MT5):

@@ -303,6 +303,7 @@ else {
       getAlerts: () => alerts.listView().map((v) => ({ id: v.alert.id, name: v.alert.name, enabled: v.alert.enabled, summary: v.summary, state: v.status })),
       registerNotificationChannel: (ch) => alerts.registry.register(ch),
       transcriber: makeTranscriber({ getConfig: () => config, getKey }),
+      ...(process.env.AURUM_WA_DEBUG ? { log: (m: string) => console.log(`[wa] ${m}`) } : {}),
     });
     registerWhatsAppIpc(ipcMain, wa, async () => wa.sendBriefing(composeBriefing(await briefingInput())));
     wa.start();

@@ -77,6 +77,7 @@ export class WhatsAppService {
       getToken: () => d.secrets.getToken(),
       store: d.store,
       onBatch: async (batch) => {
+        d.log?.(`batch of ${batch.messages.length}: ${batch.messages.map((m) => `${m.kind}:${m.id}`).join(',')}`);
         const { work } = await this.pipeline.ingest(batch.messages);
         void this.pipeline.enqueueWork(work); // classification is persisted; the offset may advance while the AI works
       },

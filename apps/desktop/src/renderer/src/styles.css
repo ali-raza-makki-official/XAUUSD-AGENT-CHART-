@@ -34,7 +34,11 @@ h2, h3, h4 { margin: 0; font-weight: 600; }
 /* ---------- shell ---------- */
 .app { display: grid; height: 100%; grid-template-rows: 44px minmax(0, 1fr) auto; grid-template-columns: 48px minmax(0, 1fr) var(--chat-w, 360px); background: var(--border); gap: 1px; }
 .app > * { background: var(--bg-panel); min-width: 0; min-height: 0; }
-.topbar { grid-column: 1 / 4; display: flex; align-items: center; gap: 12px; padding: 0 12px; }
+.topbar { grid-column: 1 / 4; display: flex; align-items: center; gap: 12px; padding: 0 12px; -webkit-app-region: drag; user-select: none; }
+/* leave room for the native window buttons (Windows) / traffic lights (macOS); everything clickable opts out of dragging */
+.topbar { padding-right: calc(100vw - env(titlebar-area-width, calc(100vw - 150px)) + 12px); }
+.topbar button, .topbar input, .topbar select, .topbar a, .topbar [role=button], .topbar [role=switch], .topbar [role=tab] { -webkit-app-region: no-drag; }
+html.mac .topbar { padding-left: 84px; padding-right: 12px; }
 .topbar .group { display: flex; align-items: center; gap: 8px; }
 .sep { width: 1px; height: 20px; background: var(--border); flex: none; }
 .spacer { flex: 1; }

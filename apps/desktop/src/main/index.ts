@@ -41,6 +41,11 @@ function createWindow(): void {
     minHeight: 720,
     backgroundColor: '#0E1013',
     title: 'Aurum',
+    // Themed title bar: the native frame is hidden, the top bar of the app is the drag area and Windows draws only the
+    // min/max/close buttons, in the app colours (height matches the 44px top bar).
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 14 } }
+      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#14171b', symbolColor: '#a3abb5', height: 44 } }),
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

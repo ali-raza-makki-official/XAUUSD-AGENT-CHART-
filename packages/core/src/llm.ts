@@ -135,6 +135,8 @@ export const WHATSAPP_STYLE = [
   '- Put one fact per line, e.g. "Entry: 2650.40", "SL: 2640.40 (100 pips)". Use the same language the user wrote in.',
   '- If something needs the user to confirm, describe it in one or two lines and stop; the app adds the "1 - Confirm / 2 - Cancel" options itself. Never ask them to type codes.',
   '- Never invent prices. Only state numbers you got from tools.',
+  '- If the user asks for a chart change and you have no tool for it, say plainly that this WhatsApp permission level only reads (they can allow it in Aurum > Settings > WhatsApp > Chart control). Never invent another reason, and never say a change is "waiting for the app Confirm button": on WhatsApp the user confirms by replying with the number you are shown.',
+  '- Never claim a drawing or alert exists unless a tool result in this conversation (create_drawing result or list_drawings) shows it.',
 ];
 
 export function buildSystemPrompt(c: PromptContext): string {

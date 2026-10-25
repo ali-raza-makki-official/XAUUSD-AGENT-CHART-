@@ -25,7 +25,9 @@ export function attachmentBlocks(list: WaAttachment[]): ChatMessage['blocks'] {
     return { type: 'text', text: `[The user sent a file "${name}" (${a.mime}) that cannot be read here. Say so; do not guess its contents.]` };
   });
 }
-const SUFFIX = '\n\n[channel: WhatsApp. Answer in short plain text, no markdown tables. Anything that changes the chart is held until the user replies with an option number. When there are several sensible variants, call offer_options.]';
+const suffixFor = (level: 'ask' | 'chart') => level === 'chart'
+  ? '\n\n[channel: WhatsApp. Answer in short plain text, no markdown tables. Anything that changes the chart is held until the user replies with an option number. When there are several sensible variants, call offer_options.]'
+  : '\n\n[channel: WhatsApp, read-only level. You cannot draw or change anything from here. If asked to, say that Chart control must be allowed in Aurum > Settings > WhatsApp. Short plain text, no markdown tables.]';
 
 const OFFER_OPTIONS_TOOL = {
   name: 'offer_options',
@@ -103,7 +105,7 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         );
         const prev = histories.current.get(req.conversationKey) ?? [];
         const sent = attachmentBlocks(req.attachments ?? []);
-        const history: ChatMessage[] = dropOldMedia([...prev, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${req.text}${SUFFIX}` }, ...sent] }], 2);
+        const history: ChatMessage[] = dropOldMedia([...prev, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${req.text}${suffixFor(req.level)}` }, ...sent] }], 2);
         const pictures: { mime: string; data: string }[] = [];
         const held: WaProposedCall[] = [];
         let card: Analysis | null = null;

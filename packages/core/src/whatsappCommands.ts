@@ -464,6 +464,14 @@ export class WhatsAppPipeline {
       return this.handleConfirm(m, waiting.code, commandId, done, pick);
     }
     if (waiting && NO_RE.test(text)) return this.handleCancel(m, commandId, done);
+    if (!waiting && /^[1-9]$/.test(text)) {
+      await this.reply(m.from, 'Nothing is waiting for an answer right now (an offer lasts only a few minutes, and a number only works right after one). Ask again if you still want it.', 'confirm', { replyTo: m.id, commandId });
+      return done('replied', 'number with nothing pending');
+    }
+    if (/^[A-Za-z0-9_-]{120,}$/.test(text)) {
+      await this.reply(m.from, 'That looks like an API token or key. Never send tokens in a chat: anyone who sees this chat could use it. I did not pass it to the AI. Revoke it in the provider\'s dashboard and create a new one.', 'security', { replyTo: m.id, commandId });
+      return done('rejected_code', 'token-like text blocked');
+    }
     if (text.startsWith('/')) return this.handleSlash(m, text, commandId, done);
     return this.handleAi(m, text, attachments, viaVoice, commandId, done);
   }
@@ -535,7 +543,8 @@ export class WhatsAppPipeline {
       }), this.d.aiTimeoutMs ?? 120_000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await this.reply(m.from, `The assistant could not answer: ${clip(msg, 200)}`, 'ai', { replyTo: m.id, commandId });
+      const clean = msg.replace(/^(Error: )?Error invoking remote method '[^']+': (Error: )?/, '');
+      await this.reply(m.from, `The assistant could not answer: ${clip(clean, 200)}`, 'ai', { replyTo: m.id, commandId });
       return done('failed', msg);
     } finally {
       timers.clearInterval(h);
@@ -622,11 +631,13 @@ export class WhatsAppPipeline {
     const alts = action.alternatives ?? [];
     if (!alts.length) delete action.alternatives;
     const optionLines = [`1 - ${action.label ?? 'Confirm'}`, ...alts.map((a, i) => `${i + 2} - ${a.label}`), `${alts.length + 2} - Cancel`].join('\n');
+    // Drawings and alerts are harmless and people answer on a phone: five minutes. Trades keep the stricter setting.
+    const ttlSec = action.level === 'chart' ? Math.max(s.confirmTtlSec, 300) : s.confirmTtlSec;
     const code = this.d.randomDigits(4);
     const createdAt = this.now();
     const base = { commandId: actionCommandId, code, action, userKey: m.from };
-    this.d.store.savePending({ id: actionCommandId, ...base, binding: confirmationBinding(base), createdAt, expiresAt: createdAt + s.confirmTtlSec * 1000, attempts: 0, status: 'pending' });
-    const mins = s.confirmTtlSec >= 120 && s.confirmTtlSec % 60 === 0 ? `${s.confirmTtlSec / 60} minutes` : `${s.confirmTtlSec} seconds`;
+    this.d.store.savePending({ id: actionCommandId, ...base, binding: confirmationBinding(base), createdAt, expiresAt: createdAt + ttlSec * 1000, attempts: 0, status: 'pending' });
+    const mins = ttlSec >= 120 && ttlSec % 60 === 0 ? `${ttlSec / 60} minutes` : `${ttlSec} seconds`;
     await this.reply(m.from, `${action.preview}\n\nNothing has been done yet.\n\n${optionLines}\n\nReply with a number. Valid for ${mins}, one use.`, 'confirm', { replyTo: m.id, commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
     this.hist({ direction: 'system', kind: 'confirm', commandId: actionCommandId, messageId: m.id, summary: clip(`Confirmation required: ${action.preview}`, 160), status: 'confirm_required' });
     done('confirm_required', 'waiting for code');

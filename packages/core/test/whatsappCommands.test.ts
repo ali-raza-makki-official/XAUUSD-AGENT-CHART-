@@ -228,3 +228,34 @@ describe('voice, images and files from WhatsApp', () => {
     expect(r.sent.at(-1)!.images![0]!.mimeType).toBe('image/png');
   });
 });
+
+describe('real-chat problems', () => {
+  it('a bare number with nothing pending is answered, not sent to the AI', async () => {
+    let asked = 0;
+    const r = rig({ ai: { handle: async () => { asked++; return { text: 'ai' }; } } });
+    await r.p.handleBatch([msg('n1', '1')]);
+    expect(asked).toBe(0);
+    expect(r.texts().at(-1)).toMatch(/Nothing is waiting/);
+  });
+  it('a pasted API token is never forwarded to the AI', async () => {
+    let asked = 0;
+    const r = rig({ ai: { handle: async () => { asked++; return { text: 'ai' }; } } });
+    await r.p.handleBatch([msg('t1', 'EAAx' + 'a1B2c3D4e5'.repeat(20))]);
+    expect(asked).toBe(0);
+    expect(r.texts().at(-1)).toMatch(/looks like an API token/);
+  });
+  it('transport noise is stripped from AI errors', async () => {
+    const r = rig({ ai: { handle: async () => { throw new Error("Error invoking remote method 'ai:chat': Error: Provider error 400. bad schema"); } } });
+    await r.p.handleBatch([msg('e1', 'hello')]);
+    expect(r.texts().at(-1)).toBe('The assistant could not answer: Provider error 400. bad schema');
+  });
+  it('chart confirmations last five minutes, trade confirmations keep the shorter setting', async () => {
+    const chartAi: RemoteAiHandler = { handle: async () => ({ text: 'x', proposedAction: { kind: 'ai_tools', payload: {}, preview: 'Draw', level: 'chart' } }) };
+    const r = rig({ ai: chartAi, settings: { permission: 'chart' } });
+    await r.p.handleBatch([msg('c1', 'draw')]);
+    expect(r.texts().at(-1)).toMatch(/Valid for 5 minutes/);
+    const t = rig();
+    await t.p.handleBatch([msg('c2', 'close my trade')]);
+    expect(t.texts().at(-1)).toMatch(/Valid for 2 minutes/);
+  });
+});

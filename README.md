@@ -20,6 +20,8 @@ Orders (demo only, wired this session; checked in a real Electron run against th
 - AI orders: only when Settings > AI > "Orders by the AI" is set to Confirm (needs trading enabled). The AI prepares a PREVIEW (`propose_order_action`); you press Confirm; the risk gate runs again. In Suggest mode the tool is not offered at all. Bulk close is never available to the AI. Stop AI sets the kill switch.
 - Run the manual test plan in `docs/ORDERS.md` on an Exness DEMO account before trusting any of it.
 
+Also added after the first checks (unit-tested, partly checked in Electron against stand-ins): all MT5 timeframes in a dropdown, resizable/hideable panels, zone validity (3 touches), `find_zones`, `watch_drawing` (approach + reached alerts), chart screenshots and voice/image/PDF input on WhatsApp with per-model capability routing, WhatsApp status notices, and a Journal with statistics from real closed MT5 deals. The EA must be recompiled for the new timeframes.
+
 MT5 connection: the **AurumBridge EA** (`bridge/mql5/AurumBridge.mq5`, `docs/MQL5_BRIDGE.md`) is the only bridge. The app side (WebSocket hub, orders, quotes) was checked against a protocol stand-in and the EA compiled and connected on the owner's PC; real broker retcodes, filling modes and pending orders are not verified. The old Python bridge was removed.
 
 The Windows installer and CI are configured but have never run on Windows (`docs/RELEASING.md`).

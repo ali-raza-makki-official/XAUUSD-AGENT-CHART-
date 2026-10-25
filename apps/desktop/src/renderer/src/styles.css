@@ -397,3 +397,9 @@ body.resizing .splitter { pointer-events: auto; }
 .tfitem { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; background: transparent; color: var(--t1); border: 1px solid var(--border); border-radius: var(--r-sm); cursor: pointer; font-size: 12px; }
 .tfitem:hover { background: var(--bg-hover, rgba(255,255,255,.06)); }
 .tfitem[aria-checked='true'] { border-color: var(--gold); color: var(--gold); }
+
+.journal { display: grid; gap: 10px; }
+.statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--bg-panel); }
+.stat .l { color: var(--t3); font-size: 11px; }
+.stat .v { font-size: 14px; font-weight: 600; white-space: nowrap; }

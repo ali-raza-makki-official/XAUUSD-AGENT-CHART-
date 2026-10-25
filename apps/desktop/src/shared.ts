@@ -59,6 +59,8 @@ export interface AurumApi extends WhatsAppApi {
   ordersConfirm(commandId: string): Promise<OrderRecord>;
   ordersReconcile(commandId: string): Promise<OrderRecord>;
   ordersKill(on: boolean): Promise<void>;
+  /** Real closed deals from MT5 for the last N days (for the journal and performance statistics). */
+  ordersHistory(days: number): Promise<import('@aurum/core').BrokerDeal[]>;
   ordersActivity(): Promise<ActivityEntry[]>;
   eaInfo(): Promise<{ port: number; token: string; connected: boolean }>;
   aiStatus(): Promise<{ secureStorage: boolean; hasKey: Record<ProviderId, boolean> }>;
@@ -110,6 +112,7 @@ export const IPC = {
   ordersConfirm: 'orders:confirm',
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
+  ordersHistory: 'orders:history',
   ordersActivity: 'orders:activity',
   eaInfo: 'ea:info',
   aiStatus: 'ai:status',

@@ -1,4 +1,4 @@
-import { BrokerNotSent, BrokerDealSchema, BrokerOrderSchema, BrokerOutcomeSchema, BrokerPositionSchema, EvidenceSchema, OrderEngine, SymbolSpecSchema, type ActivityEntry, type AppConfig, type BrokerPort, type OrderRecord } from '@aurum/core';
+import { BrokerNotSent, BrokerDealSchema, type BrokerDeal, BrokerOrderSchema, BrokerOutcomeSchema, BrokerPositionSchema, EvidenceSchema, OrderEngine, SymbolSpecSchema, type ActivityEntry, type AppConfig, type BrokerPort, type OrderRecord } from '@aurum/core';
 import { z } from 'zod';
 import type { DatabaseSync } from 'node:sqlite';
 import type { BridgeManager } from './bridge';
@@ -81,6 +81,12 @@ export class OrderService {
   activity(limit = 100): ActivityEntry[] {
     const rows = this.db().prepare('SELECT json FROM order_activity WHERE workspace_id = ? ORDER BY id DESC LIMIT ?').all(WORKSPACE, limit) as { json: string }[];
     return rows.flatMap((r) => { try { return [JSON.parse(r.json) as ActivityEntry]; } catch { return []; } });
+  }
+
+  /** Closed-deal history from MT5 (the EA returns at most the newest 500 deals). */
+  async history(days: number): Promise<BrokerDeal[]> {
+    const since = Math.floor(Date.now() / 1000) - Math.max(1, Math.min(365, Math.round(days))) * 86400;
+    return bridgePort(this.bridge).deals(since);
   }
 
   async state(): Promise<OrdersState> {

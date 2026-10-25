@@ -11,6 +11,8 @@ import { IndicatorStore, IndicatorSchema, makeIndicator, indicatorTitle, outputS
 import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValues, warmupBars, type IndicatorType } from './indicators';
 import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
+import { closedTrades, summarize } from './performance';
+import { type BrokerDeal } from './orderCommand';
 import { analyseStructure, zoneLife } from './structure';
 import { ORDER_TOOLS, type OrdersPort } from './orderTools';
 
@@ -131,6 +133,8 @@ export interface ToolContext {
   /** Order previews (propose_order_action). Absent = the tool reports unavailable. */
   orders?: OrdersPort;
   /** PNG of the chart as the user sees it (candles, indicators, drawings). Absent or null = no chart is on screen. */
+  /** Real closed deals from the broker. Absent = the tool reports unavailable. */
+  deals?: (days: number) => Promise<BrokerDeal[]>;
   captureChart?: () => Promise<{ mime: string; data: string } | null>;
 }
 
@@ -323,6 +327,23 @@ export const AI_TOOLS: AiTool[] = [
       if (!shot) return fail('unavailable', 'The chart is not on screen, so no screenshot could be taken. Open the Aurum window.');
       const st = ctx.getState();
       return { ok: true, data: { captured: true, symbol: st.symbol, timeframe: st.timeframe, note: 'The image follows as a picture.' }, images: [shot] };
+    },
+  },
+  {
+    name: 'get_performance',
+    description: 'Statistics of the user\'s REAL closed trades from MT5 history (win rate, profit factor, expectancy, drawdown, streaks, best/worst hours and weekdays, buy vs sell). Use it to review how the user trades and to give honest feedback. Money amounts are only included when the user allowed balance sharing; ratios and counts always are. Based on at most the newest 500 deals.',
+    input: z.object({ days: z.number().int().min(1).max(365).default(30) }),
+    needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx, input: { days: number }) {
+      if (!ctx.deals) return fail('unavailable', 'Trade history is not available in this session.');
+      let deals: BrokerDeal[];
+      try { deals = await ctx.deals(input.days); } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+      const trades = closedTrades(deals);
+      const s = summarize(trades);
+      if (ctx.exposeBalance) return { ok: true, data: { days: input.days, ...s } };
+      const { net, grossWin, grossLoss, avgWin, avgLoss, expectancy, maxDrawdown, bestTrade, worstTrade, byHour, byWeekday, bySide, ...ratios } = s;
+      return { ok: true, data: { days: input.days, ...ratios, moneyHidden: 'Money amounts are hidden (Settings > AI > share balance is off). Win/loss counts and ratios are real.',
+        byHour: byHour.map((h) => ({ hour: h.hour, trades: h.trades })), byWeekday: byWeekday.map((w) => ({ weekday: w.weekday, trades: w.trades })), bySide: { buy: bySide.buy.trades, sell: bySide.sell.trades } } };
     },
   },
   {

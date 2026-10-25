@@ -78,6 +78,7 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     captureChart,
+    deals: (days: number) => st().api!.ordersHistory(days),
     getSpec: () => st().spec, startOfToday,
     context: {
       getSessions: () => st().api!.contextRead('sessions'),

@@ -6,6 +6,7 @@ import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
 import { ContextPanel } from './ContextPanel';
 import { AlertsPanel } from './AlertsPanel';
+import { JournalPanel } from './JournalPanel';
 import type { AppConfig } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 
@@ -46,6 +47,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
         <div className="content" role="tabpanel" style={undefined}>
           {tab === 'alerts' && <AlertsPanel api={api} config={config} />}
           {tab === 'positions' && positions}
+          {tab === 'journal' && <JournalPanel api={api} config={config} />}
           {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
             <div className="log">{log.map((l, i) => {
@@ -57,7 +59,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
               <div className="row" style={{ marginBottom: 6 }}><Button size="sm" icon={Undo2} onClick={onUndoAllAi}>Undo all AI changes today</Button></div>
               <div className="log">{[...aiActions].reverse().map((a, i) => <div key={i}><span className="t">{new Date(a.at).toLocaleTimeString()}</span>{a.label}</div>)}</div>
             </div>
-          ) : tab !== 'context' && tab !== 'alerts' && <EmptyState icon={cur.icon} title={cur.empty} />}
+          ) : tab !== 'context' && tab !== 'alerts' && tab !== 'journal' && <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}
     </section>

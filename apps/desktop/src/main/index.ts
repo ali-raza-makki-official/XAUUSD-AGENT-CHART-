@@ -204,6 +204,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.ordersPrepare, (_e, c: unknown) => orders.engine.prepare(c));
   ipcMain.handle(IPC.ordersConfirm, (_e, id: unknown) => orders.engine.confirm(z.string().min(8).max(80).parse(id)));
   ipcMain.handle(IPC.ordersReconcile, (_e, id: unknown) => orders.engine.reconcile(z.string().min(8).max(80).parse(id)));
+  ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
   ipcMain.handle(IPC.reconnect, () => startFeed());

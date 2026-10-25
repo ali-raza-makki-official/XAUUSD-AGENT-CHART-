@@ -643,6 +643,31 @@ export class WhatsAppPipeline {
     done('confirm_required', 'waiting for code');
   }
 
+  /**
+   * The app itself asks the linked user something (for example "zone reached: take the trade?"). It uses the same numbered,
+   * single-use, expiring answer as an AI proposal. Returns false when WhatsApp is not linked or the permission level is too low.
+   */
+  async askLinked(action: ProposedAction, intro: string): Promise<boolean> {
+    const link = this.d.store.getLink();
+    if (link.status !== 'linked') return false;
+    const s = this.d.settings();
+    if (WA_LEVEL_RANK[s.permission] < WA_LEVEL_RANK[action.level]) return false;
+    const alts = (action.alternatives ?? []).filter((a) => WA_LEVEL_RANK[s.permission] >= WA_LEVEL_RANK[a.level]);
+    action = { ...action, alternatives: alts };
+    if (!alts.length) delete action.alternatives;
+    const actionCommandId = commandIdFor(`ask-${this.now()}-${this.d.randomDigits(4)}`, 'act');
+    const code = this.d.randomDigits(4);
+    const createdAt = this.now();
+    const ttlSec = action.level === 'chart' ? Math.max(s.confirmTtlSec, 300) : s.confirmTtlSec;
+    const base = { commandId: actionCommandId, code, action, userKey: link.userId };
+    this.d.store.savePending({ id: actionCommandId, ...base, binding: confirmationBinding(base), createdAt, expiresAt: createdAt + ttlSec * 1000, attempts: 0, status: 'pending' });
+    const optionLines = [`1 - ${action.label ?? 'Confirm'}`, ...alts.map((a, i) => `${i + 2} - ${a.label}`), `${alts.length + 2} - Skip`].join('\n');
+    const mins = ttlSec >= 120 && ttlSec % 60 === 0 ? `${ttlSec / 60} minutes` : `${ttlSec} seconds`;
+    await this.reply(link.userId, `${intro}\n\nNothing has been done yet.\n\n${optionLines}\n\nReply with a number. Valid for ${mins}, one use.`, 'confirm', { commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
+    this.hist({ direction: 'system', kind: 'confirm', commandId: actionCommandId, messageId: null, summary: clip(`Asked: ${action.preview}`, 160), status: 'confirm_required' });
+    return true;
+  }
+
   private async handleConfirm(m: InboundMessage, code: string, commandId: string, done: (s: WaHistoryStatus, d?: string) => void, option = 1): Promise<void> {
     const store = this.d.store;
     const p = store.getPending();

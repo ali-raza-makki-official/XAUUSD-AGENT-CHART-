@@ -8,7 +8,8 @@ import { riskAtSl } from './orders';
  * before anything is sent. Nothing in this file talks to a broker.
  */
 
-export const OrderActorSchema = z.enum(['manual', 'ai', 'whatsapp']);
+/** 'rule' = the Trade Assistant acting on a plan or management rule the user approved in advance (see assistant.ts). */
+export const OrderActorSchema = z.enum(['manual', 'ai', 'whatsapp', 'rule']);
 export type OrderActor = z.infer<typeof OrderActorSchema>;
 
 /** Trade commands expire fast: a stale confirm must never fire later. */
@@ -27,6 +28,8 @@ const envelope = {
   /** Broker symbol. Must pass the GOLD-only allow-list in the RiskGate. */
   symbol: z.string().min(1).max(32),
   reason: z.string().max(300).optional(),
+  /** Set on orders opened by an approved trade plan. */
+  planId: z.string().max(80).optional(),
 };
 
 export const PendingTypeSchema = z.enum(['buy_limit', 'sell_limit', 'buy_stop', 'sell_stop']);

@@ -54,12 +54,15 @@ export interface OrdersState {
 
 export class OrderService {
   readonly engine: OrderEngine;
+  /** Ids of trade plans the user approved; supplied by the Trade Assistant so the risk gate can check them. */
+  approvedPlanIds: () => string[] = () => [];
+  snapshot() { return bridgePort(this.bridge).snapshot(); }
   constructor(private readonly bridge: BridgeManager, private readonly getConfig: () => AppConfig, private readonly db: () => DatabaseSync) {
     this.engine = new OrderEngine({
       broker: bridgePort(bridge),
       settings: () => {
         const c = this.getConfig();
-        return { tradingEnabled: c.trading.enabled, risk: c.risk, aiPermissions: c.aiPermissions, allowedSymbols: [c.brokerSymbol], pipSize: c.pipSize };
+        return { tradingEnabled: c.trading.enabled, risk: c.risk, aiPermissions: c.aiPermissions, allowedSymbols: [c.brokerSymbol], pipSize: c.pipSize, assistant: { enabled: c.assistant.enabled, approvedPlanIds: this.approvedPlanIds() } };
       },
       onRecord: (r) => this.saveRecord(r),
       onActivity: (a) => this.saveActivity(a),

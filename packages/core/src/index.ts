@@ -39,3 +39,4 @@ export * from './preTrade';
 export * from './behavior';
 export * from './views';
 export * from './briefing';
+export * from './assistant';

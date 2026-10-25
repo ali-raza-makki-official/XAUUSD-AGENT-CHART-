@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { ChecklistSettingsSchema, NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { AssistantSettingsSchema, ChecklistSettingsSchema, NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig, type FeedStatus } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
@@ -10,6 +10,7 @@ import { loadConfig, saveConfig } from './config';
 import { makeTranscriber, voiceRoute } from './transcribe';
 import { ConnectionWatcher } from './connectionWatch';
 import { tickBriefing } from './briefingScheduler';
+import { AssistantService, SqlitePlanStore, describePlan } from './assistant';
 import { atLeast, closedTrades, composeBriefing, summarize, type AiView, type BriefingInput, type CalendarEvent, type NoTradeRule, type UserView } from '@aurum/core';
 import { kvGet, kvSet, closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
@@ -35,6 +36,7 @@ let hub: ContextHub;
 let alerts: AlertService;
 let wa: WhatsAppService;
 let watcher: ConnectionWatcher | null = null;
+let assistant: AssistantService | null = null;
 let briefingTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Real data for the morning briefing. Anything that cannot be read is passed as null and left out of the text. */
@@ -152,6 +154,7 @@ function registerIpc(): void {
         context: ContextSettingsSchema,
         notifications: NotificationSettingsSchema,
         checklist: ChecklistSettingsSchema,
+        assistant: AssistantSettingsSchema,
       })
       .partial()
       .parse(patch);
@@ -251,6 +254,22 @@ function registerIpc(): void {
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: v }); // a development run must not register itself with Windows
     return app.getLoginItemSettings().openAtLogin;
   });
+  const planInput = z.object({
+    side: z.enum(['buy', 'sell']), zone: z.object({ low: z.number().positive(), high: z.number().positive() }),
+    entry: z.enum(['touch', 'limit']).optional(), slPips: z.number().positive().max(5000).optional(), tpPips: z.number().positive().max(5000).nullable().optional(),
+    riskPct: z.number().positive().max(5).optional(), autoTake: z.boolean().optional(), expiryHours: z.number().positive().max(720).optional(), note: z.string().max(500).optional(),
+  });
+  const planId = z.string().min(8).max(80);
+  ipcMain.handle(IPC.assistList, () => assistant!.list());
+  ipcMain.handle(IPC.assistCreate, (_e, raw: unknown) => {
+    const { expiryHours, ...i } = planInput.parse(raw);
+    return assistant!.create({ ...i, createdBy: 'manual', ...(expiryHours ? { expiresAt: Date.now() + expiryHours * 3600_000 } : {}) } as never);
+  });
+  ipcMain.handle(IPC.assistApprove, (_e, id: unknown, auto: unknown) => assistant!.approve(planId.parse(id), { autoTake: z.boolean().parse(auto) }));
+  ipcMain.handle(IPC.assistCancel, (_e, id: unknown) => assistant!.cancel(planId.parse(id)));
+  ipcMain.handle(IPC.assistTake, (_e, id: unknown) => assistant!.take(planId.parse(id)));
+  ipcMain.handle(IPC.assistSkip, (_e, id: unknown) => assistant!.skip(planId.parse(id)));
+  ipcMain.handle(IPC.assistPips, async () => assistant!.pipsView(await orders.snapshot(), config.pipSize));
   ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
@@ -307,6 +326,28 @@ else {
     });
     registerWhatsAppIpc(ipcMain, wa, async () => wa.sendBriefing(composeBriefing(await briefingInput())));
     wa.start();
+    assistant = new AssistantService({
+      getConfig: () => config, engine: orders.engine, snapshot: () => orders.snapshot(), plans: new SqlitePlanStore(getDb),
+      kv: { get: (k) => kvGet(k as never), set: (k, v) => kvSet(k as never, v) },
+      notify: (text, priority) => { send('assist:event', { text, priority }); void wa?.notifyAssistant(text, priority); },
+      ask: (plan, text) => {
+        send('assist:ask', { plan, text });
+        void wa?.askTake(plan.id, text).catch(() => false);
+      },
+      changed: () => send('assist:changed', null),
+    });
+    orders.approvedPlanIds = () => assistant!.approvedIds();
+    wa.setAssistant({
+      positionsText: async () => {
+        const rows = assistant!.pipsView(await orders.snapshot(), config.pipSize);
+        if (!rows.length) return 'No open positions.';
+        const f = (v: number | null, signed = false) => (v === null ? '-' : `${signed && v > 0 ? '+' : ''}${v}`);
+        return rows.map((r) => `#${r.ticket} ${r.side.toUpperCase()} ${r.lots} lot @ ${r.open}: ${f(r.pips, true)} pips, stop ${r.slPips === null ? 'none' : r.slPips >= 0 ? `locked +${r.slPips}` : `${Math.abs(r.slPips)} pips risk`}, target ${f(r.tpPips)} pips`).join('\n');
+      },
+      take: (id) => assistant!.take(id), approve: (id, o) => assistant!.approve(id, o),
+      proposedSince: (ms) => { const p = assistant!.proposedSince(ms); return p ? { id: p.id, summary: describePlan(p) } : null; },
+    });
+    bridge.on('tick', (t) => { void assistant?.onTick({ bid: t.bid, ask: t.ask }); });
     watcher = new ConnectionWatcher({ notify: (text, priority) => { void wa?.notifyStatus(text, priority); } });
     bridge.on('status', (st: FeedStatus) => watcher?.onStatus(st));
     briefingTimer = setInterval(() => {

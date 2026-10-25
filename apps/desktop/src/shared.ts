@@ -69,6 +69,17 @@ export interface AurumApi extends WhatsAppApi {
   /** Start Aurum automatically when the user signs in to Windows. */
   autoStartGet(): Promise<boolean>;
   autoStartSet(on: boolean): Promise<boolean>;
+  // Trade Assistant (plans in pips, ask-or-act at the zone, pip-based management)
+  assistList(): Promise<import('@aurum/core').TradePlan[]>;
+  assistCreate(input: AssistPlanInput): Promise<import('@aurum/core').TradePlan>;
+  assistApprove(id: string, autoTake: boolean): Promise<import('@aurum/core').TradePlan>;
+  assistCancel(id: string): Promise<import('@aurum/core').TradePlan>;
+  assistTake(id: string): Promise<import('@aurum/core').TradePlan>;
+  assistSkip(id: string): Promise<import('@aurum/core').TradePlan>;
+  assistPips(): Promise<AssistPipRow[]>;
+  onAssistEvent(cb: (e: { text: string; priority: 'critical' | 'normal' }) => void): () => void;
+  onAssistAsk(cb: (e: { plan: import('@aurum/core').TradePlan; text: string }) => void): () => void;
+  onAssistChanged(cb: () => void): () => void;
   ordersHistory(days: number): Promise<import('@aurum/core').BrokerDeal[]>;
   ordersActivity(): Promise<ActivityEntry[]>;
   eaInfo(): Promise<{ port: number; token: string; connected: boolean }>;
@@ -122,6 +133,8 @@ export const IPC = {
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
   ordersHistory: 'orders:history',
+  assistList: 'assist:list', assistCreate: 'assist:create', assistApprove: 'assist:approve', assistCancel: 'assist:cancel', assistTake: 'assist:take', assistSkip: 'assist:skip', assistPips: 'assist:pips',
+  assistEvent: 'assist:event', assistAsk: 'assist:ask', assistChanged: 'assist:changed',
   autoStartGet: 'app:autoStartGet',
   autoStartSet: 'app:autoStartSet',
   kvGet: 'kv:get',
@@ -162,3 +175,6 @@ export const IPC = {
 export interface AiCapsInfo { provider: ProviderId | null; model: string; vision: boolean; pdf: boolean; audioIn: boolean; /** Who transcribes voice notes: the chat model itself, another provider's speech-to-text, or nobody. */ voice: { by: 'model' | 'openai' | 'gemini' | null } }
 
 export interface JournalCheckSnapshot { items: { id: string; label: string; status: 'pass' | 'fail' | 'warn' | 'unknown' }[]; acknowledged: boolean; ticked: string[] }
+
+export interface AssistPlanInput { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry?: 'touch' | 'limit'; slPips?: number; tpPips?: number | null; riskPct?: number; autoTake?: boolean; expiryHours?: number; note?: string }
+export interface AssistPipRow { ticket: number; side: 'buy' | 'sell'; lots: number; open: number; pips: number | null; slPips: number | null; tpPips: number | null }

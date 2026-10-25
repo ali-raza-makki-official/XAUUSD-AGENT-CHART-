@@ -3,6 +3,7 @@ import { StyleSchema } from './drawing';
 import { NotificationSettingsSchema } from './notifications';
 import { TimeframeSchema } from './feed';
 import { ChecklistSettingsSchema, DEFAULT_CHECKLIST } from './preTrade';
+import { AssistantSettingsSchema, DEFAULT_ASSISTANT } from './assistant';
 import { ChartLayoutSchema, DEFAULT_PANE_TIMEFRAMES, PaneTimeframesSchema } from './chartLayout';
 import { ContextSettingsSchema } from './contextConnectors';
 
@@ -53,6 +54,8 @@ export const AiPermissionsSchema = z.object({
   chartControl: z.boolean().default(false),
   alertsAndSetups: z.boolean().default(false),
   orders: OrderMode.default('suggest'),
+  /** The AI may propose trade PLANS (zone, stop and target in pips). Nothing happens until the user approves a plan. */
+  tradePlans: z.boolean().default(false),
   sltpAndPartialClose: z.boolean().default(false),
   bulkClose: z.boolean().default(false),
   /** Connectors and credentials are never reachable by the AI; kept here for completeness. */
@@ -81,6 +84,7 @@ export const AppConfigSchema = z.object({
   stayInTool: z.boolean().default(false),
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
   checklist: ChecklistSettingsSchema.default(() => DEFAULT_CHECKLIST),
+  assistant: AssistantSettingsSchema.default(() => DEFAULT_ASSISTANT),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
   ai: AiSettingsSchema.default(() => AiSettingsSchema.parse({})),
   notifications: NotificationSettingsSchema.default(() => NotificationSettingsSchema.parse({})),

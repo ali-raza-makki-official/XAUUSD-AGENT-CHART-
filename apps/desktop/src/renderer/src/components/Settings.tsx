@@ -105,6 +105,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
         <div className="perm"><div><b>Indicators</b><span className="hint">Add, change and remove indicators on the chart</span></div><Switch label="Indicators edit" checked={perms.indicatorsEdit} onChange={(v) => setPerm('indicatorsEdit', v)} /></div>
         <div className="perm"><div><b>Chart layout and timeframes</b><span className="hint">View only: switch layouts and pane timeframes</span></div><Switch label="Chart control" checked={perms.chartControl} onChange={(v) => setPerm('chartControl', v)} /></div>
         <div className="perm"><div><b>Create alerts and setups</b><span className="hint">Alerts are checked by code on the live feed, not by the AI. Every change is undoable; the AI can keep at most 50 alerts.</span></div><Switch label="Alerts and setups" checked={perms.alertsAndSetups} onChange={(v) => setPerm('alertsAndSetups', v)} /></div>
+        <div className="perm"><div><b>Trade plans by the AI</b><span className="hint">The AI may propose a plan (zone, stop and target in pips). Nothing is placed until you approve that plan. Needs the Trade Assistant switched on.</span></div><Switch label="Trade plans" checked={perms.tradePlans} onChange={(v) => setPerm('tradePlans', v)} /></div>
         <div className="perm"><div><b>Orders by the AI</b><span className="hint">Suggest: the AI cannot prepare orders. Confirm: the AI may prepare an order preview; nothing is sent until YOU press Confirm, and the risk rules run again then. Needs Settings &gt; Trading enabled (demo).</span></div>
           <Segmented<'suggest' | 'confirm'> label="AI order mode" size="sm" value={perms.orders === 'confirm' ? 'confirm' : 'suggest'} onChange={(v) => { if (v === 'confirm' && !config.trading.enabled) return; setPerm('orders', v); }} options={[{ value: 'suggest', label: 'Suggest' }, { value: 'confirm', label: 'Confirm', title: config.trading.enabled ? 'The AI may prepare previews you confirm' : 'Enable trading first (Trading section)' }]} /></div>
         <div className="perm"><div><b>AI may propose SL/TP changes and partial closes</b><span className="hint">Each one still needs your Confirm click.</span></div><Switch label="SL TP and partial close" checked={perms.sltpAndPartialClose} onChange={(v) => setPerm('sltpAndPartialClose', v)} /></div>
@@ -124,6 +125,10 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
   const [enabled, setEnabled] = useState(config.trading.enabled);
   const [risk, setRisk] = useState(config.risk);
   const [cl, setCl] = useState(config.checklist);
+  const [asst, setAsst] = useState(config.assistant);
+  const pipsField = (label: string, v: number, set: (n: number) => void, step = 1) => (
+    <div className="irow" key={label}><span className="ilabel">{label}</span><input className="input mono" type="number" step={step} min={0} value={v} aria-label={label} onChange={(e) => set(Number(e.target.value))} /></div>
+  );
   const [msg, setMsg] = useState<string | null>(null);
   const num = (k: keyof typeof risk, label: string, step = 0.1) => (
     <div className="irow" key={String(k)}>
@@ -148,6 +153,26 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
           <Segmented<'manage_only' | 'freeze'> label="Daily limit policy" size="sm" value={risk.dailyLimitPolicy === 'freeze' ? 'freeze' : 'manage_only'} onChange={(v) => setRisk({ ...risk, dailyLimitPolicy: v })} options={[{ value: 'manage_only', label: 'Manage only' }, { value: 'freeze', label: 'Freeze' }]} />
         </div>
         <span className="hint">Manage only: no new risk, but you can move SL toward safety and close or reduce. A stop loss is always required.</span>
+      </Section>
+      <Section title="Trade Assistant (plans and trade management, all in pips)">
+        <div className="perm"><div><b>Turn the assistant on</b><span className="hint">Master switch. While it is off nothing automatic ever happens. It works only on demo accounts, only after trading is enabled above, and Stop AI pauses it. Every order still goes through the risk rules.</span></div><Switch label="Trade Assistant" checked={asst.enabled} onChange={(v) => setAsst({ ...asst, enabled: v })} /></div>
+        <span className="hint">1 pip = 0.10 in price on gold (50 pips = 5.00). Stops, targets and breakeven are set in pips, never dollars.</span>
+        <b style={{ fontSize: 12 }}>Defaults for new plans</b>
+        {pipsField('Stop loss (pips)', asst.defaults.slPips, (n) => setAsst({ ...asst, defaults: { ...asst.defaults, slPips: n } }))}
+        {pipsField('Take profit (pips)', asst.defaults.tpPips, (n) => setAsst({ ...asst, defaults: { ...asst.defaults, tpPips: n } }))}
+        {pipsField('Risk per trade (%)', asst.defaults.riskPct, (n) => setAsst({ ...asst, defaults: { ...asst.defaults, riskPct: n } }), 0.05)}
+        {pipsField('Plan stays valid (hours)', asst.defaults.expiryHours, (n) => setAsst({ ...asst, defaults: { ...asst.defaults, expiryHours: n } }))}
+        <div className="perm"><div><b>Manage my open gold trades automatically</b><span className="hint">Applies the pip rules below to every open gold position and tells you each time (desktop and WhatsApp). It only ever moves a stop toward profit, takes a partial, or closes; it never widens risk or removes a stop.</span></div><Switch label="Auto-manage" checked={asst.autoManage} onChange={(v) => setAsst({ ...asst, autoManage: v })} /></div>
+        <div className="perm"><div><b>Breakeven</b><span className="hint">When profit reaches the trigger, move the stop to entry plus a small cushion.</span></div><Switch label="Breakeven" checked={asst.rules.breakeven.enabled} onChange={(v) => setAsst({ ...asst, rules: { ...asst.rules, breakeven: { ...asst.rules.breakeven, enabled: v } } })} /></div>
+        {pipsField('Breakeven at profit (pips)', asst.rules.breakeven.triggerPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, breakeven: { ...asst.rules.breakeven, triggerPips: n } } }))}
+        {pipsField('Cushion above entry (pips)', asst.rules.breakeven.offsetPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, breakeven: { ...asst.rules.breakeven, offsetPips: n } } }))}
+        <div className="perm"><div><b>Trailing stop</b><span className="hint">After the start profit, keep the stop a set distance behind price, moving it in steps.</span></div><Switch label="Trailing stop" checked={asst.rules.trail.enabled} onChange={(v) => setAsst({ ...asst, rules: { ...asst.rules, trail: { ...asst.rules.trail, enabled: v } } })} /></div>
+        {pipsField('Start trailing at profit (pips)', asst.rules.trail.startPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, trail: { ...asst.rules.trail, startPips: n } } }))}
+        {pipsField('Trail distance (pips)', asst.rules.trail.distancePips, (n) => setAsst({ ...asst, rules: { ...asst.rules, trail: { ...asst.rules.trail, distancePips: n } } }))}
+        {pipsField('Move in steps of (pips)', asst.rules.trail.stepPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, trail: { ...asst.rules.trail, stepPips: n } } }))}
+        <div className="perm"><div><b>Partial close</b><span className="hint">Close a share of the position once, at a profit level.</span></div><Switch label="Partial close" checked={asst.rules.partial.enabled} onChange={(v) => setAsst({ ...asst, rules: { ...asst.rules, partial: { ...asst.rules.partial, enabled: v } } })} /></div>
+        {pipsField('Partial at profit (pips)', asst.rules.partial.atPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, partial: { ...asst.rules.partial, atPips: n } } }))}
+        {pipsField('Close this share (%)', asst.rules.partial.closePct, (n) => setAsst({ ...asst, rules: { ...asst.rules, partial: { ...asst.rules.partial, closePct: n } } }), 5)}
       </Section>
       <Section title="Pre-trade checklist (shown before every new order)">
         <div className="perm"><div><b>Show the checklist on the order review page</b><span className="hint">Checks use real data. When data is missing (for example no calendar connected) the item says Unknown, never OK.</span></div><Switch label="Pre-trade checklist" checked={cl.enabled} onChange={(v) => setCl({ ...cl, enabled: v })} /></div>
@@ -176,7 +201,7 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
           </>
         )}
       </Section>
-      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk, checklist: { ...cl, manual: cl.manual.filter((m) => m.label.trim().length >= 2) } }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
+      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk, assistant: asst, checklist: { ...cl, manual: cl.manual.filter((m) => m.label.trim().length >= 2) } }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
     </>
   );
 }

@@ -139,7 +139,17 @@ export interface ToolContext {
   deals?: (days: number) => Promise<BrokerDeal[]>;
   /** The user's written view and the AI's latest analysis (persisted by the app). */
   views?: { getMine(): Promise<UserView | null>; getAi(): Promise<AiView | null>; saveAi(v: AiView): Promise<void> };
+  /** Trade Assistant plans and pip views (the app persists them; the user approves). Absent = the tools report unavailable. */
+  plans?: PlansPort;
   captureChart?: () => Promise<{ mime: string; data: string } | null>;
+}
+
+export interface PlansPort {
+  defaults(): { slPips: number; tpPips: number; riskPct: number; expiryHours: number };
+  create(input: { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry: 'touch' | 'limit'; slPips: number; tpPips: number | null; riskPct: number; expiryHours: number; note: string; drawingId?: string }): Promise<{ id: string; summary: string; status: string }>;
+  list(): Promise<{ id: string; status: string; summary: string; detail: string }[]>;
+  cancel(id: string): Promise<void>;
+  positions(): Promise<{ ticket: number; side: string; lots: number; open: number; pips: number | null; slPips: number | null; tpPips: number | null }[]>;
 }
 
 export interface AlertsPort {
@@ -390,6 +400,79 @@ export const AI_TOOLS: AiTool[] = [
       const { net, grossWin, grossLoss, avgWin, avgLoss, expectancy, maxDrawdown, bestTrade, worstTrade, byHour, byWeekday, bySide, ...ratios } = s;
       return { ok: true, data: { days: input.days, ...ratios, behavior, moneyHidden: 'Money amounts are hidden (Settings > AI > share balance is off). Win/loss counts and ratios are real.',
         byHour: byHour.map((h) => ({ hour: h.hour, trades: h.trades })), byWeekday: byWeekday.map((w) => ({ weekday: w.weekday, trades: w.trades })), bySide: { buy: bySide.buy.trades, sell: bySide.sell.trades } } };
+    },
+  },
+  {
+    name: 'get_positions',
+    description: 'The user\'s open MT5 positions with profit, stop and target measured in PIPS (1 pip = 0.10 price on gold), plus ticket, side, lots and entry. slPips is signed: negative = pips still at risk, positive = profit already locked in (e.g. +2 = stop just above entry). Always talk about distances in pips, never in dollars.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx) {
+      if (!ctx.plans) return fail('unavailable', 'Positions are not available in this session.');
+      try { return { ok: true, data: { positions: await ctx.plans.positions(), unit: 'pips' } }; } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+    },
+  },
+  {
+    name: 'propose_trade_plan',
+    description: 'Propose a TRADE PLAN to the user: wait for price to reach a zone, then (when the user says so) take the trade. You give the side, the zone (exact prices from find_zones or a zone drawing id), and the stop loss and take profit in PIPS. The app sizes the lot from the risk %. NOTHING is placed until the user approves the plan in the app or on WhatsApp; they choose whether the assistant asks first at the zone or places it automatically. Always explain the plan in pips (stop, target, reward:risk).',
+    input: z.object({
+      side: z.enum(['buy', 'sell']),
+      zone: z.object({ low: z.number().positive(), high: z.number().positive() }).optional().describe('Exact zone prices. Give this or drawingId.'),
+      drawingId: z.string().optional().describe('Id of a zone drawing; its price range is used.'),
+      slPips: z.number().positive().max(2000).optional().describe('Stop loss distance in pips from the entry. Default from the user\'s settings.'),
+      tpPips: z.number().positive().max(5000).optional().describe('Take profit distance in pips. Default from the user\'s settings.'),
+      riskPct: z.number().positive().max(5).optional().describe('Risk per trade in % of balance. Default from the user\'s settings; the risk gate still enforces the maximum.'),
+      entry: z.enum(['touch', 'limit']).default('touch').describe('touch: market order when price reaches the zone. limit: a pending order at the zone edge.'),
+      expiryHours: z.number().positive().max(720).optional(),
+      note: z.string().max(300).optional(),
+      reason: Reason,
+    }),
+    needs: (p) => p.tradePlans, needsLabel: 'Trade plans',
+    async run(ctx, input: { side: 'buy' | 'sell'; zone?: { low: number; high: number }; drawingId?: string; slPips?: number; tpPips?: number; riskPct?: number; entry: 'touch' | 'limit'; expiryHours?: number; note?: string; reason: string }) {
+      if (!ctx.plans) return fail('unavailable', 'Trade plans are not available in this session.');
+      let zone = input.zone;
+      if (input.drawingId) {
+        const d = ctx.store.list().find((x) => x.id === input.drawingId);
+        if (!d || d.kind !== 'zone') return fail('invalid_input', `Drawing ${input.drawingId} is not a zone.`);
+        zone = { low: Math.min(d.a.price, d.b.price), high: Math.max(d.a.price, d.b.price) };
+      }
+      if (!zone) return fail('invalid_input', 'Give a zone (low/high prices) or a zone drawingId.');
+      if (!(zone.high > zone.low)) return fail('invalid_input', 'Zone high must be above low.');
+      const bad = priceSanity(ctx, [zone.low, zone.high]);
+      if (bad) return fail('invalid_input', bad);
+      const st = ctx.getState();
+      if (st.bid !== null && st.ask !== null) {
+        if (input.side === 'buy' && st.ask < zone.low) return fail('invalid_input', `The market (${st.ask}) is already below this buy zone (${zone.low}-${zone.high}); a buy plan waits for price to come DOWN into a zone below the market.`);
+        if (input.side === 'sell' && st.bid > zone.high) return fail('invalid_input', `The market (${st.bid}) is already above this sell zone (${zone.low}-${zone.high}); a sell plan waits for price to come UP into a zone above the market.`);
+      }
+      // A zone that has been used up on real candles is not a plan worth making.
+      try {
+        const candles = await ctx.getCandles(st.timeframe, 500);
+        const life = zoneLife(candles.slice(-300), zone.low, zone.high, input.side === 'buy' ? 'demand' : 'supply', 3, false);
+        if (!life.valid) return fail('invalid_input', `This zone is no longer valid on real candles (${life.touches} touches or closed through at ${life.invalidatedAt}). Pick a fresh zone from find_zones.`);
+      } catch { /* the zone check is skipped when candles are unavailable; the risk gate still protects the order */ }
+      const d = ctx.plans.defaults();
+      const slPips = input.slPips ?? d.slPips, tpPips = input.tpPips ?? d.tpPips;
+      const r = await ctx.plans.create({ side: input.side, zone, entry: input.entry, slPips, tpPips, riskPct: input.riskPct ?? d.riskPct, expiryHours: input.expiryHours ?? d.expiryHours, note: input.note ?? '', ...(input.drawingId ? { drawingId: input.drawingId } : {}) });
+      return { ok: true, data: { planId: r.id, status: r.status, plan: r.summary, rewardToRisk: Math.round((tpPips / slPips) * 100) / 100, next: 'The plan is PROPOSED, not active. The user must approve it (Plans tab in the app, or reply on WhatsApp). Say that plainly and describe it in pips.' } };
+    },
+  },
+  {
+    name: 'list_trade_plans',
+    description: 'The user\'s trade plans and their status (proposed, armed, asking, filled, skipped, cancelled, expired, blocked) with the reason.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx) {
+      if (!ctx.plans) return fail('unavailable', 'Trade plans are not available in this session.');
+      return { ok: true, data: { plans: await ctx.plans.list() } };
+    },
+  },
+  {
+    name: 'cancel_trade_plan',
+    description: 'Cancel a trade plan that has not been filled yet.',
+    input: z.object({ planId: z.string().min(8), reason: Reason }),
+    needs: (p) => p.tradePlans, needsLabel: 'Trade plans',
+    async run(ctx, input: { planId: string }) {
+      if (!ctx.plans) return fail('unavailable', 'Trade plans are not available in this session.');
+      try { await ctx.plans.cancel(input.planId); return { ok: true, data: { cancelled: input.planId } }; } catch (e) { return fail('invalid_input', e instanceof Error ? e.message : String(e)); }
     },
   },
   {

@@ -66,6 +66,9 @@ export interface TurnOpts {
 }
 
 /** One agent turn over `history` (which already ends with the user message). Shared by the chat panel and the WhatsApp headless runner. */
+const planSummary = (p: { side: string; zone: { low: number; high: number }; entry: string; slPips: number; tpPips: number | null; riskPct: number; note: string }) =>
+  `${p.side.toUpperCase()} ${p.entry === 'limit' ? 'limit at' : 'when price reaches'} ${p.zone.low}-${p.zone.high}: stop ${p.slPips} pips${p.tpPips ? `, target ${p.tpPips} pips` : ''}, risk ${p.riskPct}%${p.note ? `. ${p.note}` : ''}`;
+
 function parseKv<T>(json: string | null, schema: { safeParse(v: unknown): { success: true; data: T } | { success: false } }): T | null {
   if (!json) return null;
   try { const r = schema.safeParse(JSON.parse(json)); return r.success ? r.data : null; } catch { return null; }
@@ -85,6 +88,16 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     captureChart,
+    plans: {
+      defaults: () => { const d = st().config?.assistant.defaults; return { slPips: d?.slPips ?? 70, tpPips: d?.tpPips ?? 140, riskPct: d?.riskPct ?? 0.3, expiryHours: d?.expiryHours ?? 24 }; },
+      create: async (i: { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry: 'touch' | 'limit'; slPips: number; tpPips: number | null; riskPct: number; expiryHours: number; note: string }) => {
+        const p = await st().api!.assistCreate(i);
+        return { id: p.id, status: p.status, summary: planSummary(p) };
+      },
+      list: async () => (await st().api!.assistList()).map((p) => ({ id: p.id, status: p.status, summary: planSummary(p), detail: p.statusDetail })),
+      cancel: async (id: string) => { await st().api!.assistCancel(id); },
+      positions: () => st().api!.assistPips(),
+    },
     views: {
       getMine: async () => parseKv(await st().api!.kvGet('user_view'), UserViewSchema),
       getAi: async () => { try { const j = await st().api!.kvGet('ai_view'); return j ? (JSON.parse(j) as AiView) : null; } catch { return null; } },

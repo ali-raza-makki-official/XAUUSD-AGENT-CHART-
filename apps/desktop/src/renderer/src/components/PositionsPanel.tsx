@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Briefcase, ShieldAlert } from 'lucide-react';
 import { floorToStep } from '@aurum/core';
-import type { AurumApi } from '../../../shared';
+import type { AssistPipRow, AurumApi } from '../../../shared';
 import type { OrdersState } from '../../../main/orders';
 import { Button, Chip, EmptyState } from './ui';
 
 type Open = (body: { type: string } & Record<string, unknown>, extra?: string[]) => void;
 
-export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open: Open; onSettings: () => void }) {
+export function PositionsPanel({ api, open, onSettings, bePips = 2, pipSize = 0.1 }: { api: AurumApi; open: Open; onSettings: () => void; bePips?: number; pipSize?: number }) {
   const [st, setSt] = useState<OrdersState | null>(null);
   const [edit, setEdit] = useState<{ ticket: number; sl: string; tp: string } | null>(null);
+  const [pips, setPips] = useState<Map<number, AssistPipRow>>(new Map());
   const [pform, setPform] = useState<{ orderType: 'buy_limit' | 'sell_limit' | 'buy_stop' | 'sell_stop'; price: string; sl: string; tp: string; lots: string; hours: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    const tick = () => api.ordersState().then((s) => alive && setSt(s)).catch(() => undefined);
+    const tick = () => { void api.assistPips().then((rows) => alive && setPips(new Map(rows.map((r) => [r.ticket, r])))).catch(() => undefined); return api.ordersState().then((s) => alive && setSt(s)).catch(() => undefined); };
     void tick();
     const t = setInterval(tick, 2000);
     return () => { alive = false; clearInterval(t); };
@@ -42,7 +43,7 @@ export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open:
         <EmptyState icon={Briefcase} title="No open positions">Positions opened in MT5 or from Aurum appear here live.</EmptyState>
       ) : (
         <table className="dtable">
-          <thead><tr><th>Ticket</th><th>Side</th><th>Lots</th><th>Open</th><th>SL</th><th>TP</th><th>P/L</th><th /></tr></thead>
+          <thead><tr><th>Ticket</th><th>Side</th><th>Lots</th><th>Open</th><th>SL</th><th>TP</th><th>Pips</th><th>SL / TP pips</th><th>P/L</th><th /></tr></thead>
           <tbody>
             {st.positions.map((p) => (
               <tr key={p.ticket}>
@@ -52,6 +53,8 @@ export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open:
                 <td className="mono">{p.priceOpen.toFixed(2)}</td>
                 <td className="mono">{p.sl?.toFixed(2) ?? <span className="warn">none</span>}</td>
                 <td className="mono">{p.tp?.toFixed(2) ?? '–'}</td>
+                <td className="mono" style={{ color: (pips.get(p.ticket)?.pips ?? 0) >= 0 ? 'var(--buy)' : 'var(--sell)' }} data-testid="pos-pips">{pips.get(p.ticket)?.pips === null || pips.get(p.ticket) === undefined ? '–' : `${(pips.get(p.ticket)!.pips! > 0 ? '+' : '')}${pips.get(p.ticket)!.pips!.toFixed(1)}`}</td>
+                <td className="mono hint">{(() => { const v = pips.get(p.ticket)?.slPips; return v === null || v === undefined ? 'no stop' : v >= 0 ? `locked +${v}` : `risk ${Math.abs(v)}`; })()} / {pips.get(p.ticket)?.tpPips ?? '–'}</td>
                 <td className="mono" style={{ color: p.profit >= 0 ? 'var(--buy)' : 'var(--sell)' }}>{p.profit.toFixed(2)}</td>
                 <td>
                   {edit?.ticket === p.ticket ? (
@@ -68,7 +71,7 @@ export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open:
                     </span>
                   ) : (
                     <span className="row">
-                      <Button size="sm" onClick={() => open({ type: 'modify_sltp', ticket: p.ticket, ticketKind: 'position', sl: p.priceOpen })}>SL to entry</Button>
+                      <Button size="sm" onClick={() => open({ type: 'modify_sltp', ticket: p.ticket, ticketKind: 'position', sl: Math.round((p.type === 'buy' ? p.priceOpen + bePips * pipSize : p.priceOpen - bePips * pipSize) * 100) / 100 })}>Breakeven +{bePips}p</Button>
                       <Button size="sm" onClick={() => setEdit({ ticket: p.ticket, sl: p.sl?.toString() ?? '', tp: p.tp?.toString() ?? '' })}>SL/TP</Button>
                       <Button size="sm" onClick={() => partial(p.ticket, p.volume, 25)}>25%</Button>
                       <Button size="sm" onClick={() => partial(p.ticket, p.volume, 50)}>50%</Button>

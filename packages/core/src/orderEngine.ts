@@ -47,6 +47,8 @@ export interface EngineSettings {
   aiPermissions: AiPermissions;
   allowedSymbols: string[];
   pipSize: number;
+  /** Trade Assistant switch and approved plan ids (see assistant.ts). */
+  assistant?: { enabled: boolean; approvedPlanIds: string[] };
 }
 
 export interface BrokerResultSummary {
@@ -266,6 +268,7 @@ export class OrderEngine {
         tradingEnabled: settings.tradingEnabled, risk: settings.risk,
         aiPermissions: relaxSltp ? { ...settings.aiPermissions, sltpAndPartialClose: true } : settings.aiPermissions,
         allowedSymbols: settings.allowedSymbols, allowLive: false,
+        ...(settings.assistant ? { assistant: settings.assistant } : {}),
       },
       killSwitch: this.kill, account: snap.account, spec: snap.spec, tick: snap.tick, positions: snap.positions, orders: snap.orders,
       dailyRealizedPnl: pnl,

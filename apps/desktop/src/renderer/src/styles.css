@@ -436,3 +436,6 @@ body.resizing .splitter { pointer-events: auto; }
 .vcmp-disagree { border-left-color: var(--sell); }
 .vcmp-different_kind { border-left-color: var(--warn); }
 .subhead { margin: 12px 0 6px; font-size: 12px; color: var(--t2); text-transform: uppercase; letter-spacing: .06em; }
+
+.plans { display: grid; gap: 10px; }
+.planform { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-raised); }

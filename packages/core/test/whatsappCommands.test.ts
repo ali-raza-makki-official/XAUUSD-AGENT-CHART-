@@ -259,3 +259,29 @@ describe('real-chat problems', () => {
     expect(t.texts().at(-1)).toMatch(/Valid for 2 minutes/);
   });
 });
+
+describe('the app asks, you answer with a number', () => {
+  const ask = { kind: 'take_plan', payload: { planId: 'plan-1' }, preview: 'Zone reached: take the BUY?', level: 'trade' as const, label: 'Take the trade' };
+  it('"zone reached" is asked on WhatsApp and 1 runs exactly that action once', async () => {
+    const r = rig();
+    expect(await r.p.askLinked(ask, 'Zone reached: price 2641.30 is inside 2640-2642. Take the BUY? SL 70 pips.')).toBe(true);
+    expect(r.texts().at(-1)).toMatch(/1 - Take the trade\n2 - Skip/);
+    expect(r.sent.at(-1)!.tradeRelated).toBe(true);
+    await r.p.handleBatch([msg('z1', '1')]);
+    expect(r.executed).toHaveLength(1);
+    expect(r.executed[0]).toMatch(/^take_plan:/);
+    await r.p.handleBatch([msg('z2', '1')]);
+    expect(r.executed).toHaveLength(1); // single use
+  });
+  it('2 skips; and below the Trade level WhatsApp cannot be asked', async () => {
+    const r = rig();
+    await r.p.askLinked(ask, 'Zone reached');
+    await r.p.handleBatch([msg('z3', '2')]);
+    expect(r.executed).toHaveLength(0);
+    expect(r.texts().at(-1)).toMatch(/Cancelled/);
+    const low = rig({ settings: { permission: 'chart' } });
+    expect(await low.p.askLinked(ask, 'Zone reached')).toBe(false);
+    expect(low.sent).toHaveLength(0);
+  });
+});
+

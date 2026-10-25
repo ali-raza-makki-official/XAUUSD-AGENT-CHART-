@@ -56,6 +56,10 @@ export const SCHEMA_SQL = `
       workspace_id TEXT NOT NULL, key TEXT NOT NULL, json TEXT NOT NULL, at INTEGER NOT NULL,
       PRIMARY KEY (workspace_id, key)
     );
+    CREATE TABLE IF NOT EXISTS trade_plans (
+      id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (id, workspace_id)
+    );
     CREATE TABLE IF NOT EXISTS order_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL
     );

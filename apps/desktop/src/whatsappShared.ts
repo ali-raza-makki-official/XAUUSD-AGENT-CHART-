@@ -59,7 +59,7 @@ export interface WaUiStatus {
 /** Headless AI turn, main -> renderer. */
 /** Something the user sent on WhatsApp, base64 encoded for the renderer turn. */
 export interface WaAttachment { kind: 'image' | 'document'; mime: string; name?: string; data: string }
-export interface WaAiRequest { id: string; text: string; conversationKey: string; level: 'ask' | 'chart'; attachments?: WaAttachment[] }
+export interface WaAiRequest { id: string; text: string; conversationKey: string; level: 'ask' | 'chart'; /** The user may let the AI propose trade plans (WhatsApp level Trade). */ plans?: boolean; attachments?: WaAttachment[] }
 export interface WaProposedCall { name: string; input: unknown }
 export interface WaAiResponse {
   id: string;

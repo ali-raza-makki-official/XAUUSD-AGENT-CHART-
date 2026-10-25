@@ -227,7 +227,8 @@ export class WhatsAppService {
       const attachments: WaAttachment[] = input.attachments.map((a) => (a.kind === 'image'
         ? { kind: 'image' as const, mime: a.mimeType, data: Buffer.from(a.bytes).toString('base64') }
         : { kind: 'document' as const, mime: a.mimeType, name: a.name, data: Buffer.from(a.bytes).toString('base64') }));
-      const res = await this.askRenderer({ id: randomUUID(), text: input.text, conversationKey: input.conversationKey, level, ...(attachments.length ? { attachments } : {}) });
+      const startedAt = this.now();
+      const res = await this.askRenderer({ id: randomUUID(), text: input.text, conversationKey: input.conversationKey, level, ...(input.canProposeTrades ? { plans: true } : {}), ...(attachments.length ? { attachments } : {}) });
       if (!res) return { text: NO_WINDOW };
       if (!res.ok) throw new Error(res.error ?? 'The AI request failed.');
       const out: RemoteAiResult = { text: res.text };
@@ -241,6 +242,8 @@ export class WhatsAppService {
       } else if (res.proposed && res.proposed.calls.length && level === 'chart') {
         out.proposedAction = { kind: 'ai_tools', payload: { calls: res.proposed.calls }, preview: res.proposed.preview.slice(0, 1900), level: 'chart' };
       }
+      const plan = input.canProposeTrades ? this.assistantPort?.proposedSince(startedAt) ?? null : null;
+      if (plan && !out.proposedAction) out.proposedAction = this.askApprovePlan(plan.id, `The AI proposes a trade plan:\n${plan.summary}`);
       return out;
     },
   };
@@ -258,7 +261,10 @@ export class WhatsAppService {
       const s = this.settings();
       return `MT5 feed: ${feed.state}${feed.message ? ` (${feed.message})` : ''}\nAI permission over WhatsApp: ${s.permission}${this.paused ? '\nRemote actions: PAUSED' : ''}\nAurum window for AI: ${this.aiReady ? 'open' : 'not available'}`;
     },
-    positions: async () => 'Open positions are not available: order management is not connected in this build.',
+    positions: async () => {
+      if (!this.assistantPort) return 'Open positions are not available yet.';
+      try { return await this.assistantPort.positionsText(); } catch (e) { return `Positions unavailable: ${e instanceof Error ? e.message : String(e)}`; }
+    },
     alerts: async () => {
       if (!this.d.getAlerts) return 'Alerts are not available in this build yet.';
       const list = this.d.getAlerts();
@@ -269,6 +275,16 @@ export class WhatsAppService {
     resume: async () => { this.d.store.setMeta('remotePaused', '0'); this.pushStatus(); return 'Resumed. Remote AI is on again.'; },
     executeConfirmed: async (action: ProposedAction, _ctx: RemoteActionContext): Promise<ActionOutcome> => {
       if (this.paused) return { status: 'rejected', text: 'Remote actions are paused. Nothing was done.' };
+      if (action.kind === 'take_plan' || action.kind === 'approve_plan') {
+        const a = this.assistantPort;
+        if (!a) return { status: 'failed', text: 'The Trade Assistant is not available. Nothing was done.' };
+        const planId = String((action.payload as { planId?: unknown }).planId ?? '');
+        try {
+          const r = action.kind === 'take_plan' ? await a.take(planId) : await a.approve(planId, { autoTake: (action.payload as { autoTake?: unknown }).autoTake === true });
+          const ok = r.status === 'filled' || r.status === 'armed';
+          return { status: ok ? 'confirmed' : 'failed', text: r.statusDetail || r.status };
+        } catch (e) { return { status: 'failed', text: e instanceof Error ? e.message : String(e) }; }
+      }
       if (action.kind !== 'ai_tools') return { status: 'failed', text: `Unsupported action "${action.kind}", nothing was done.` };
       const calls = z.array(z.object({ name: z.string(), input: z.unknown() })).safeParse((action.payload as { calls?: unknown }).calls);
       if (!calls.success) return { status: 'failed', text: 'The stored action was malformed, nothing was done.' };
@@ -282,14 +298,31 @@ export class WhatsAppService {
    * App and connection status messages ("Aurum closed", "MT5 connection lost"). Best effort: they only go out while
    * this process is alive, so a crash, a power cut or a force kill cannot announce itself.
    */
-  async notifyStatus(text: string, priority: 'critical' | 'normal' | 'low' = 'normal', waitMs = 4000): Promise<boolean> {
+  async notifyStatus(text: string, priority: 'critical' | 'normal' | 'low' = 'normal', waitMs = 4000, o: { ignoreStatusFlag?: boolean } = {}): Promise<boolean> {
     const s = this.settings();
-    if (!s.enabled || !s.notifications || !s.statusNotices || this.d.store.getLink().status !== 'linked') return false;
+    if (!s.enabled || !s.notifications || (!s.statusNotices && !o.ignoreStatusFlag) || this.d.store.getLink().status !== 'linked') return false;
     const q = this.quietHours();
     if (inQuietHours(q, this.now()) && !(priority === 'critical' && q.allowCritical)) return false;
     const send = this.gateway.send({ id: randomUUID(), kind: 'alert_hit', priority, text: text.slice(0, 1000), dedupeKey: `status:${text.slice(0, 40)}`, createdAt: this.now() })
       .then((r) => r.status === 'sent', () => false);
     return Promise.race([send, new Promise<boolean>((r) => setTimeout(() => r(false), waitMs))]);
+  }
+
+  /** Trade Assistant actions and results (own flag: they matter even if status messages are off). */
+  notifyAssistant(text: string, priority: 'critical' | 'normal' = 'normal'): Promise<boolean> { return this.notifyStatus(text, priority, 4000, { ignoreStatusFlag: true }); }
+
+  private assistantPort: { positionsText(): Promise<string>; proposedSince(ms: number): { id: string; summary: string } | null; take(id: string): Promise<{ status: string; statusDetail: string }>; approve(id: string, o: { autoTake: boolean }): Promise<{ status: string; statusDetail: string }> } | null = null;
+  setAssistant(p: NonNullable<WhatsAppService['assistantPort']>): void { this.assistantPort = p; }
+
+  /** "Zone reached: take it?" on WhatsApp, answered with 1 (take) or 2 (skip). False when WhatsApp cannot ask (not linked, level below Trade). */
+  askTake(planId: string, text: string): Promise<boolean> {
+    return this.pipeline.askLinked({ kind: 'take_plan', payload: { planId }, preview: text.slice(0, 1900), level: 'trade', label: 'Take the trade' }, text.slice(0, 1900));
+  }
+
+  /** A plan the AI proposed, for approval on WhatsApp: 1 = ask me at the zone, 2 = place it automatically, 3 = cancel. */
+  askApprovePlan(planId: string, text: string): ProposedAction {
+    const base = { kind: 'approve_plan', preview: text.slice(0, 1900), level: 'trade' as const };
+    return { ...base, payload: { planId, autoTake: false }, label: 'Approve: ask me when price reaches the zone', alternatives: [{ ...base, payload: { planId, autoTake: true }, label: 'Approve: place it automatically at the zone' }] };
   }
 
   // ----- outbound notifications -----------------------------------------------------------------

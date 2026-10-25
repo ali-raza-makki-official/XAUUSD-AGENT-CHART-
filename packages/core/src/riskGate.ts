@@ -17,6 +17,7 @@ export type GateRule =
   | 'ai_suggest_only' | 'ai_automatic_disabled' | 'ai_permission_missing' | 'bulk_close_permission' | 'not_confirmed' | 'command_expired'
   | 'unresolved_command' | 'no_quote' | 'no_spec' | 'volume_invalid' | 'missing_sl' | 'sl_wrong_side' | 'tp_wrong_side' | 'max_spread' | 'max_slippage'
   | 'max_positions' | 'per_trade_risk' | 'open_risk' | 'daily_limit_unknown' | 'daily_limit_hit' | 'daily_limit_would_exceed' | 'daily_limit_frozen'
+  | 'assistant_off' | 'plan_not_approved' | 'rule_not_allowed' | 'rule_widens_risk'
   | 'sl_widen_after_limit' | 'sl_widen_exceeds_trade_risk' | 'position_not_found' | 'order_not_found' | 'partial_volume_invalid' | 'nothing_to_close';
 
 export interface GateCheck { rule: GateRule; message: string }
@@ -32,6 +33,8 @@ export interface GateInput {
     aiPermissions: AiPermissions;
     /** Broker symbols that may be traded. Must also look like gold. */
     allowedSymbols: string[];
+    /** Trade Assistant: the master switch and the ids of plans the user approved. Absent = assistant off. */
+    assistant?: { enabled: boolean; approvedPlanIds: string[] };
     /** Never true in the app in this iteration (AURUM_ALLOW_LIVE is not set by Aurum). */
     allowLive: boolean;
   };
@@ -141,6 +144,22 @@ export function evaluateGate(inp: GateInput): GateResult {
     } else if (!isOpening(c) && !s.aiPermissions.sltpAndPartialClose) {
       fail('ai_permission_missing', 'The AI has no permission to modify SL/TP or close positions (Settings > AI).');
     }
+  }
+  if (c.actor === 'rule') {
+    // The assistant only acts inside what the user approved beforehand: a named plan to open, or risk-reducing management.
+    if (inp.killSwitch) fail('kill_switch', '"Stop AI actions" is on: the assistant is paused.');
+    if (!s.assistant?.enabled) fail('assistant_off', 'The Trade Assistant is switched off (Settings > Trading > Assistant).');
+    if (isOpening(c)) {
+      const planId = (c as OpenMarketCommand | OpenPendingCommand).planId;
+      if (!planId || !(s.assistant?.approvedPlanIds ?? []).includes(planId)) fail('plan_not_approved', 'This order does not belong to a plan you approved.');
+    } else if (c.type === 'modify_sltp') {
+      const m = c as ModifySltpCommand;
+      if (m.ticketKind !== 'position' || m.sl === undefined || m.sl === null || m.tp !== undefined) fail('rule_not_allowed', 'The assistant may only move a position\'s stop loss, never remove it or change take profit.');
+      else {
+        const p = inp.positions.find((x) => x.ticket === m.ticket);
+        if (p && p.sl !== null && (p.type === 'buy' ? m.sl <= p.sl : m.sl >= p.sl)) fail('rule_widens_risk', 'The assistant may only move a stop loss toward profit, never back.');
+      }
+    } else if (c.type !== 'partial_close' && c.type !== 'close_position') fail('rule_not_allowed', `The assistant is not allowed to run "${c.type}".`);
   }
   if (!inp.userConfirmed) fail('not_confirmed', 'The user has not confirmed this exact command.');
   if (inp.now >= c.expiresAt) fail('command_expired', 'This command expired before it was confirmed. Prepare it again.');

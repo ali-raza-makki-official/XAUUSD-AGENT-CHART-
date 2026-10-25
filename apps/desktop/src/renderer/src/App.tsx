@@ -11,6 +11,7 @@ import { Splitter } from './components/Splitter';
 import { useDrawings } from './useDrawings';
 import { TopBar } from './components/TopBar';
 import { BottomPanel } from './components/Panels';
+import { AssistantOverlays } from './components/Assistant';
 import { ChatPanel } from './components/ChatPanel';
 import { useOrderFlow } from './components/OrderConfirm';
 import { PositionsPanel } from './components/PositionsPanel';
@@ -178,8 +179,9 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} tf={tf} onAskAi={(t) => { setRightTab('chat'); sizes.setRightHidden(false); void chat.send(t); }} height={sizes.bottomH} onHeight={sizes.setBottomH} onResetHeight={() => sizes.setBottomH(SIZE_LIMITS.bottomH.def)} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
+      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} onSettings={() => setSettings('trading')} tf={tf} onAskAi={(t) => { setRightTab('chat'); sizes.setRightHidden(false); void chat.send(t); }} height={sizes.bottomH} onHeight={sizes.setBottomH} onResetHeight={() => sizes.setBottomH(SIZE_LIMITS.bottomH.def)} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} bePips={config?.assistant.rules.breakeven.offsetPips ?? 2} pipSize={config?.pipSize ?? 0.1} /> : null} />
       <AlertToasts api={api} />
+      <AssistantOverlays api={api} />
       {flow.dialog}
       {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}
       {settings && api && config && <SettingsDialog api={api} config={config} onSave={update} initialTab={settings} onClose={() => setSettings(false)} />}

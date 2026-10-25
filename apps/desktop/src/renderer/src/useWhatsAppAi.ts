@@ -100,8 +100,8 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         const base: AiPermissions = perms(st());
         const p = AiPermissionsSchema.parse(
           req.level === 'chart'
-            ? { ...base, orders: 'suggest', sltpAndPartialClose: false, bulkClose: false }
-            : { ...base, drawingsEdit: false, indicatorsEdit: false, chartControl: false, alertsAndSetups: false, orders: 'suggest', sltpAndPartialClose: false, bulkClose: false },
+            ? { ...base, orders: 'suggest', sltpAndPartialClose: false, bulkClose: false, tradePlans: !!req.plans && base.tradePlans }
+            : { ...base, drawingsEdit: false, indicatorsEdit: false, chartControl: false, alertsAndSetups: false, orders: 'suggest', sltpAndPartialClose: false, bulkClose: false, tradePlans: false },
         );
         const prev = histories.current.get(req.conversationKey) ?? [];
         const sent = attachmentBlocks(req.attachments ?? []);

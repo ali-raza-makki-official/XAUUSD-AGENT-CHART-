@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CircleCheck, CircleX, KeyRound, ListRestart, LoaderCircle, Lock, Search, X, Zap } from 'lucide-react';
 import {
-  DEFAULT_STYLES, DRAWING_KINDS, describeCaps, modelCaps, PROVIDERS, PROVIDER_IDS,
+  DEFAULT_STYLES, DRAWING_KINDS, describeCaps, modelCapsWith, PROVIDERS, PROVIDER_IDS,
   type AiPermissions, type AiSettings, type AppConfig, type DrawingKind, type ProviderId, type Style,
 } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
@@ -80,7 +80,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
                 <datalist id="models">{models.map((m) => <option key={m} value={m} />)}</datalist>
                 <Button icon={ListRestart} disabled={!hasKey || busy !== null} onClick={loadModels}>{busy === 'models' ? 'Loading…' : 'Load models'}</Button>
               </div>
-              {provider && <ModelCapsLine api={api} provider={provider} model={ai.models[provider] || adapter.suggestedModel} hasKey={status?.hasKey ?? {}} />}
+              {provider && <ModelCapsLine api={api} provider={provider} model={ai.models[provider] || adapter.suggestedModel} hasKey={status?.hasKey ?? {}} override={ai.capsOverride[`${provider}:${ai.models[provider] || adapter.suggestedModel}`]} onOverride={(o) => patchAi({ capsOverride: { ...ai.capsOverride, [`${provider}:${ai.models[provider] || adapter.suggestedModel}`]: o } })} />}
               <span className="hint">Model names differ by account and change over time, so load the real list from the provider instead of guessing.</span>
             </div>
             <details>
@@ -306,8 +306,8 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
 
 
 /** What the chosen model can read, and who handles voice notes. Decided per model, shown before anything is sent. */
-function ModelCapsLine({ api, provider, model, hasKey }: { api: AurumApi; provider: ProviderId; model: string; hasKey: Record<string, boolean> }) {
-  const caps = modelCaps(provider, model);
+function ModelCapsLine({ api, provider, model, hasKey, override, onOverride }: { api: AurumApi; provider: ProviderId; model: string; hasKey: Record<string, boolean>; override?: { vision?: boolean; pdf?: boolean; audioIn?: boolean } | undefined; onOverride: (o: { vision?: boolean; pdf?: boolean; audioIn?: boolean }) => void }) {
+  const caps = modelCapsWith(provider, model, undefined, override);
   const [voice, setVoice] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
@@ -319,6 +319,15 @@ function ModelCapsLine({ api, provider, model, hasKey }: { api: AurumApi; provid
   return (
     <div className="hint" role="note" data-testid="model-caps">
       {describeCaps(caps)} Voice notes: {voiceText}.
+      <details>
+        <summary style={{ cursor: 'pointer' }}>Wrong for this model? Correct it</summary>
+        <div className="row" style={{ gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+          {([['vision', 'Reads images'], ['pdf', 'Reads PDFs'], ['audioIn', 'Hears audio']] as const).map(([k, label]) => (
+            <label key={k} className="ptcheck"><input type="checkbox" checked={caps[k]} onChange={(e) => onOverride({ ...override, [k]: e.target.checked })} />{label}</label>
+          ))}
+        </div>
+        <span>The guess comes from the model name. If a provider rejects images or files for this model, untick it here. Press Save below to keep the change.</span>
+      </details>
     </div>
   );
 }

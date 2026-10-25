@@ -1,11 +1,11 @@
-import { modelCaps, type ListedCaps } from './modelCaps';
+import { modelCaps, type ListedCaps, type ModelCaps } from './modelCaps';
 import type { Block, ChatMessage, LlmRequest, LlmResponse, StopReason, ToolSpec } from './llm';
 
 export type ProviderId = 'anthropic' | 'openai' | 'gemini' | 'deepseek';
 export const PROVIDER_IDS: ProviderId[] = ['anthropic', 'openai', 'gemini', 'deepseek'];
 
 export interface HttpRequest { url: string; method: 'GET' | 'POST'; headers: Record<string, string>; body?: string }
-export interface ProviderCfg { baseUrl: string; model: string; key: string }
+export interface ProviderCfg { baseUrl: string; model: string; key: string; /** What the model can read; when absent it is guessed from the model name. */ caps?: ModelCaps }
 
 export interface ProviderCaps { tools: boolean; vision: boolean; streaming: boolean }
 
@@ -80,7 +80,7 @@ export const anthropic: ProviderAdapter = {
   id: 'anthropic', label: 'Anthropic (Claude)', defaultBaseUrl: 'https://api.anthropic.com', suggestedModel: 'claude-sonnet-5-5',
   caps: { tools: true, vision: true, streaming: false },
   buildChat(cfg, req) {
-    const caps = modelCaps('anthropic', cfg.model);
+    const caps = cfg.caps ?? modelCaps('anthropic', cfg.model);
     const messages = req.messages.map((m) => ({
       role: m.role,
       content: m.blocks.map((b) => {
@@ -159,7 +159,7 @@ function openaiLike(id: 'openai' | 'deepseek', label: string, baseUrl: string, s
         url: join(cfg.baseUrl, id === 'openai' ? '/v1/chat/completions' : '/chat/completions'), method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
         body: JSON.stringify({
-          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages, modelCaps(id, cfg.model).vision),
+          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages, (cfg.caps ?? modelCaps(id, cfg.model)).vision),
           ...(req.tools.length ? { tools: toolsOpenAI(req.tools) } : {}),
         }),
       };
@@ -194,7 +194,7 @@ export const gemini: ProviderAdapter = {
   id: 'gemini', label: 'Google Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com', suggestedModel: '',
   caps: { tools: true, vision: true, streaming: false },
   buildChat(cfg, req) {
-    const gcaps = modelCaps('gemini', cfg.model);
+    const gcaps = cfg.caps ?? modelCaps('gemini', cfg.model);
     const contents = req.messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: m.blocks.map((b) => {

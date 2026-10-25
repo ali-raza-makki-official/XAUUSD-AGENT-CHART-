@@ -1,4 +1,4 @@
-import { modelCaps, PROVIDERS, type AppConfig, type ProviderId, type Transcriber } from '@aurum/core';
+import { modelCapsWith, PROVIDERS, type AppConfig, type ProviderId, type Transcriber } from '@aurum/core';
 
 /**
  * Voice note -> text through a provider the user already configured. Anthropic and DeepSeek have no audio input,
@@ -27,11 +27,11 @@ export function voiceRoute(d: Pick<TranscriberDeps, 'getConfig' | 'getKey'>): Vo
   const active = cfg.ai.provider;
   if (active) {
     const model = cfg.ai.models[active] || PROVIDERS[active].suggestedModel;
-    if (modelCaps(active, model).audioIn && active === 'gemini' && d.getKey('gemini')) return { by: 'model', model };
+    if (modelCapsWith(active, model, undefined, cfg.ai.capsOverride?.[`${active}:${model}`]).audioIn && active === 'gemini' && d.getKey('gemini')) return { by: 'model', model };
   }
   if (d.getKey('openai')) return { by: 'openai' };
   const gm = cfg.ai.models.gemini;
-  if (d.getKey('gemini') && gm && modelCaps('gemini', gm).audioIn) return { by: 'gemini', model: gm };
+  if (d.getKey('gemini') && gm && modelCapsWith('gemini', gm, undefined, cfg.ai.capsOverride?.[`gemini:${gm}`]).audioIn) return { by: 'gemini', model: gm };
   return null;
 }
 

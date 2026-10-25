@@ -21,13 +21,20 @@ export interface ListedCaps { image_input?: { supported?: boolean }; pdf_input?:
 
 const NOT_CHAT = /(embed|tts|whisper|transcribe|moderation|imagen|veo|image-generation|dall-e|realtime|search-preview|computer-use|-audio-|gpt-audio)/i;
 
+export type CapsOverride = Partial<ModelCaps>;
+
+/** The guess for a model, then the user's own correction (if any) on top. */
+export function modelCapsWith(provider: ProviderId, model: string, listed?: ListedCaps, override?: CapsOverride): ModelCaps {
+  return { ...modelCaps(provider, model, listed), ...(override ?? {}) };
+}
+
 export function modelCaps(provider: ProviderId, model: string, listed?: ListedCaps): ModelCaps {
   const m = model.toLowerCase().replace(/^models\//, '');
   if (!m || NOT_CHAT.test(m)) return NO_CAPS;
   switch (provider) {
     case 'anthropic': {
       if (listed?.image_input || listed?.pdf_input) return { vision: listed.image_input?.supported === true, pdf: listed.pdf_input?.supported === true, audioIn: false };
-      const modern = /^claude-(3|opus|sonnet|haiku|fable|\d)/.test(m);
+      const modern = /claude-(3|opus|sonnet|haiku|fable|\d)/.test(m);
       return { vision: modern, pdf: modern, audioIn: false };
     }
     case 'openai': {

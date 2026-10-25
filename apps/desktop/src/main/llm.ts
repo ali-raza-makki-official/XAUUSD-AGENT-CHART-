@@ -1,4 +1,4 @@
-import { PROVIDERS, modelCaps, NO_CAPS, type ListedCaps, type ModelCaps, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
+import { PROVIDERS, modelCapsWith, NO_CAPS, type ListedCaps, type ModelCaps, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
 import { getKey } from './secrets';
 
 const TIMEOUT_MS = 120_000;
@@ -47,7 +47,7 @@ export async function chat(config: AppConfig, requestId: string, req: LlmRequest
   const ctl = new AbortController();
   inflight.set(requestId, ctl);
   try {
-    return adapter.parseChat(await send(provider, adapter.buildChat({ baseUrl, model, key }, req), key, ctl.signal));
+    return adapter.parseChat(await send(provider, adapter.buildChat({ baseUrl, model, key, caps: activeCaps(config).caps }, req), key, ctl.signal));
   } finally {
     inflight.delete(requestId);
   }
@@ -65,7 +65,7 @@ export function activeCaps(config: AppConfig): { provider: ProviderId | null; mo
   const provider = config.ai.provider;
   if (!provider) return { provider: null, model: '', caps: NO_CAPS };
   const model = config.ai.models[provider] || PROVIDERS[provider].suggestedModel;
-  return { provider, model, caps: modelCaps(provider, model, listed.get(`${provider}:${model}`)) };
+  return { provider, model, caps: modelCapsWith(provider, model, listed.get(`${provider}:${model}`), config.ai.capsOverride[`${provider}:${model}`]) };
 }
 
 export async function listModels(config: AppConfig, provider: ProviderId): Promise<string[]> {

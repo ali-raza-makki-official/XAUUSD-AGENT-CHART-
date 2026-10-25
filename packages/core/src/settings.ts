@@ -36,6 +36,8 @@ export const AiSettingsSchema = z.object({
   baseUrls: z.record(z.string(), z.string().max(300)).default({}),
   /** Send account balance/equity to the AI provider. Off by default; lot sizing still works locally. */
   sendBalance: z.boolean().default(false),
+  /** The user's correction when the built-in guess about a model is wrong, keyed "provider:model". */
+  capsOverride: z.record(z.string(), z.object({ vision: z.boolean().optional(), pdf: z.boolean().optional(), audioIn: z.boolean().optional() })).default({}),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;
 

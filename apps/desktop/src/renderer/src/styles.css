@@ -314,3 +314,30 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .m-tool svg { flex: none; margin-top: 2px; }
 .m-tool.bad { background: var(--bg-raised); color: var(--t1); border-color: var(--border); border-left: 3px solid var(--warn); }
 .m-user { border-radius: var(--r-sm); }
+
+/* ============ Pages: Settings and full-screen modules ============ */
+.dialog-back.page { position: fixed; top: 44px; left: 0; right: 0; bottom: 0; display: block; background: var(--bg-panel); z-index: 30; }
+.dialog.page { width: 100%; max-width: none; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.dialog.page .dialog-h { padding: 16px 32px; }
+.dialog.page .dialog-h h3 { font-size: 18px; }
+.settings-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); flex: 1; min-height: 0; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 16px 12px; border-right: 1px solid var(--border); }
+.settings-nav-item { text-align: left; background: transparent; border: 0; border-left: 2px solid transparent; border-radius: var(--r-sm); padding: 8px 12px; color: var(--t2); cursor: pointer; }
+.settings-nav-item:hover { background: var(--bg-raised); color: var(--t1); }
+.settings-nav-item[aria-current='page'] { background: var(--bg-raised); color: var(--t1); border-left-color: var(--gold); font-weight: 600; }
+.settings-pane { overflow: auto; padding: 24px 32px 40px; }
+.settings-pane > * { max-width: 900px; }
+.dialog.page .dialog-f { padding: 12px 32px; }
+.scroll { max-height: none; }
+
+.app.full-bottom .toolbar, .app.full-bottom .chartwrap, .app.full-bottom .rightcol { display: none; }
+.app.full-bottom .bottom { grid-column: 1 / 4; grid-row: 2 / 4; display: flex; flex-direction: column; }
+.app.full-bottom .bottom .content { flex: 1; max-height: none; height: auto; padding: 16px 32px; }
+.app.full-right .toolbar, .app.full-right .chartwrap, .app.full-right .bottom { display: none; }
+.app.full-right .rightcol { grid-column: 1 / 4; grid-row: 2 / 4; }
+.app.full-right .rbody > * { max-width: 960px; margin: 0 auto; }
+.app.full-right .msgs, .app.full-right .composer { max-width: 960px; width: 100%; margin: 0 auto; }
+.rtabs { align-items: center; }
+
+.seg-item { white-space: nowrap; }
+.perm > .seg { flex: none; }

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
+import { Maximize2, Minimize2, Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
 import { ContextPanel } from './ContextPanel';
@@ -21,7 +21,7 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions }: { log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
+export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull }: { full?: boolean; onFull?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -34,11 +34,12 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
           </button>
         ))}
         <span className="spacer" />
-        <IconButton label={open ? 'Collapse panel' : 'Expand panel'} pos="top" onClick={() => setOpen(!open)} aria-expanded={open}>
+        {onFull && <IconButton label={full ? 'Exit full screen (Esc)' : 'Full screen'} pos="left" onClick={onFull}>{full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</IconButton>}
+        {!full && <IconButton label={open ? 'Collapse panel' : 'Expand panel'} pos="top" onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </IconButton>
+        </IconButton>}
       </div>
-      {open && (
+      {(open || full) && (
         <div className="content" role="tabpanel" style={undefined}>
           {tab === 'alerts' && <AlertsPanel api={api} config={config} />}
           {tab === 'positions' && positions}

@@ -105,7 +105,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
         <div className="perm"><div><b>Chart layout and timeframes</b><span className="hint">View only: switch layouts and pane timeframes</span></div><Switch label="Chart control" checked={perms.chartControl} onChange={(v) => setPerm('chartControl', v)} /></div>
         <div className="perm"><div><b>Create alerts and setups</b><span className="hint">Alerts are checked by code on the live feed, not by the AI. Every change is undoable; the AI can keep at most 50 alerts.</span></div><Switch label="Alerts and setups" checked={perms.alertsAndSetups} onChange={(v) => setPerm('alertsAndSetups', v)} /></div>
         <div className="perm"><div><b>Orders by the AI</b><span className="hint">Suggest: the AI cannot prepare orders. Confirm: the AI may prepare an order preview; nothing is sent until YOU press Confirm, and the risk rules run again then. Needs Settings &gt; Trading enabled (demo).</span></div>
-          <Segmented<'suggest' | 'confirm'> label="AI order mode" size="sm" value={perms.orders === 'confirm' ? 'confirm' : 'suggest'} onChange={(v) => setPerm('orders', v)} options={[{ value: 'suggest', label: 'Suggest' }, { value: 'confirm', label: config.trading.enabled ? 'Confirm' : 'Confirm (enable trading first)', title: 'Requires Settings > Trading' }]} /></div>
+          <Segmented<'suggest' | 'confirm'> label="AI order mode" size="sm" value={perms.orders === 'confirm' ? 'confirm' : 'suggest'} onChange={(v) => { if (v === 'confirm' && !config.trading.enabled) return; setPerm('orders', v); }} options={[{ value: 'suggest', label: 'Suggest' }, { value: 'confirm', label: 'Confirm', title: config.trading.enabled ? 'The AI may prepare previews you confirm' : 'Enable trading first (Trading section)' }]} /></div>
         <div className="perm"><div><b>AI may propose SL/TP changes and partial closes</b><span className="hint">Each one still needs your Confirm click.</span></div><Switch label="SL TP and partial close" checked={perms.sltpAndPartialClose} onChange={(v) => setPerm('sltpAndPartialClose', v)} /></div>
         <div className="perm off"><div><b>Bulk close</b><span className="hint">Never available to the AI in this version</span></div><Lock size={14} aria-hidden="true" /></div>
         <div className="perm off"><div><b>Connectors and credentials</b><span className="hint">Never available to the AI</span></div><Lock size={14} aria-hidden="true" /></div>
@@ -181,14 +181,22 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
   const valid = symbol.trim().length > 0 && pipNum > 0;
 
   return (
-    <div className="dialog-back" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label="Settings">
+    <div className="dialog-back page" role="presentation">
+      <div className="dialog page" role="dialog" aria-label="Settings">
         <div className="dialog-h">
           <h3>Settings</h3>
-          <Segmented<TabId> label="Settings section" size="sm" value={tab} onChange={setTab} options={[{ value: 'general', label: 'General' }, { value: 'styles', label: 'Drawing styles' }, { value: 'ai', label: 'AI' }, { value: 'trading', label: 'Trading' }, { value: 'connectors', label: 'Connectors' }, { value: 'whatsapp', label: 'WhatsApp' }]} />
-          <IconButton label="Close settings" onClick={onClose}><X size={16} /></IconButton>
+          <IconButton label="Back to chart (Esc)" onClick={onClose}><X size={16} /></IconButton>
         </div>
-        <div className="dialog-b">
+        <div className="settings-layout">
+          <nav className="settings-nav" aria-label="Settings sections">
+            <button type="button" className="settings-nav-item" aria-current={tab === 'general' ? 'page' : undefined} onClick={() => setTab('general')}>General</button>
+            <button type="button" className="settings-nav-item" aria-current={tab === 'styles' ? 'page' : undefined} onClick={() => setTab('styles')}>Drawing styles</button>
+            <button type="button" className="settings-nav-item" aria-current={tab === 'ai' ? 'page' : undefined} onClick={() => setTab('ai')}>AI</button>
+            <button type="button" className="settings-nav-item" aria-current={tab === 'trading' ? 'page' : undefined} onClick={() => setTab('trading')}>Trading</button>
+            <button type="button" className="settings-nav-item" aria-current={tab === 'connectors' ? 'page' : undefined} onClick={() => setTab('connectors')}>Connectors</button>
+            <button type="button" className="settings-nav-item" aria-current={tab === 'whatsapp' ? 'page' : undefined} onClick={() => setTab('whatsapp')}>WhatsApp</button>
+          </nav>
+          <div className="dialog-b settings-pane">
           {tab === 'general' && (
             <>
               <div className="field">
@@ -254,7 +262,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
           {tab === 'trading' && <TradingTab config={config} onSave={onSave} />}
           {tab === 'connectors' && <ConnectorsSettings api={api} config={config} onSave={onSave} />}
           {tab === 'whatsapp' && <WhatsAppSettings api={api} />}
-        </div>
+        </div></div>
         <div className="dialog-f">
           <Button onClick={onClose}>{tab === 'ai' || tab === 'connectors' || tab === 'whatsapp' ? 'Close' : 'Cancel'}</Button>
           {tab !== 'ai' && tab !== 'connectors' && tab !== 'trading' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), mt5Path: mt5Path.trim(), mt5Mode: mode, pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}

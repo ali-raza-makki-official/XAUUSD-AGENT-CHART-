@@ -232,6 +232,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
           <div className="dialog-b settings-pane">
           {tab === 'general' && (
             <>
+              <AutoStart api={api} />
               <div className="field">
                 <label htmlFor="sym">Broker symbol for gold</label>
                 <input id="sym" className="input mono" value={symbol} onChange={(e) => setSymbol(e.target.value)} />
@@ -318,6 +319,20 @@ function ModelCapsLine({ api, provider, model, hasKey }: { api: AurumApi; provid
   return (
     <div className="hint" role="note" data-testid="model-caps">
       {describeCaps(caps)} Voice notes: {voiceText}.
+    </div>
+  );
+}
+
+
+/** Start with Windows so alerts, the AI and the MT5 link are on without you remembering to open the app. */
+function AutoStart({ api }: { api: AurumApi }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => { void api.autoStartGet().then(setOn).catch(() => setOn(null)); }, [api]);
+  if (on === null) return null;
+  return (
+    <div className="perm">
+      <div><b>Start Aurum when I sign in to Windows</b><span className="hint">Aurum then connects to MT5 by itself (the AurumBridge EA reconnects whenever either side restarts). Takes effect in the installed app, not in a development run.</span></div>
+      <Switch label="Start with Windows" checked={on} onChange={(v) => void api.autoStartSet(v).then(setOn)} />
     </div>
   );
 }

@@ -19,6 +19,8 @@ export interface OrdersPort {
   positions(): Promise<BrokerPosition[]>;
   /** Prepare (preview + dry gate). Holds the command in the app until the user confirms or it expires. */
   propose(cmd: AnyOrderCommand): Promise<PrepareResult>;
+  /** The same pre-trade checklist the user sees on the review page (real data). Absent = not included. */
+  checklist?(res: Extract<PrepareResult, { ok: true; executable: boolean }>): Promise<{ items: { label: string; status: string; detail: string }[]; needsAck: boolean } | null>;
 }
 
 const Price = z.number().positive();
@@ -118,12 +120,14 @@ export const ORDER_TOOLS: AiTool[] = [
       if (!res.ok) return fail('invalid_input', res.error);
       if (res.existing) return fail('rejected', 'That command id was already used.');
       const blocked = res.gate.failed;
+      const list = port.checklist && 'preview' in res ? await port.checklist(res).catch(() => null) : null;
       return {
         ok: true,
         data: {
           proposed: true, commandId: res.commandId, title: res.preview.title, executable: res.executable,
           blockedBy: blocked ? { rule: blocked.rule, message: blocked.message } : null,
           orderMode: port.orderMode,
+          ...(list ? { preTradeChecklist: list.items, needsUserAcknowledgement: list.needsAck, checklistNote: 'The user sees this same checklist on the review card. Tell them plainly which items fail or are unknown, and say whether you would still take the trade and why; that is an opinion, not a signal.' } : {}),
           next: res.executable
             ? 'A PREVIEW card is shown to the user. NOTHING has been sent. The user must press Confirm in the app; the risk gate will run again then. Do not claim it is executed.'
             : `A PREVIEW card is shown but it cannot be executed now (${blocked?.rule}). NOTHING has been sent. Tell the user plainly why.`,

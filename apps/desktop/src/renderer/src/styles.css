@@ -421,3 +421,17 @@ body.resizing .splitter { pointer-events: auto; }
 .ptcheck input { margin-top: 3px; }
 .ptcheck em { color: var(--gold); font-style: normal; }
 .ptack { border-top: 1px solid var(--border); padding-top: 10px; }
+
+.flags { border: 1px solid var(--border); border-left: 3px solid var(--warn); background: var(--bg-raised); padding: 8px 12px; display: grid; gap: 6px; border-radius: var(--r-sm); }
+.flags h4 { margin: 0; font-size: 12px; color: var(--t2); }
+.flag { display: grid; gap: 2px; }
+
+.views { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.vcol { display: grid; gap: 8px; align-content: start; }
+.vcol h4 { margin: 0; font-size: 12px; color: var(--t2); text-transform: uppercase; letter-spacing: .06em; }
+.vlevels { display: grid; gap: 6px; }
+.vl { display: flex; gap: 10px; }
+.vcmp { display: grid; gap: 4px; border: 1px solid var(--border); border-left: 3px solid var(--t3); background: var(--bg-raised); padding: 8px 10px; border-radius: var(--r-sm); }
+.vcmp-agree { border-left-color: var(--buy); }
+.vcmp-disagree { border-left-color: var(--sell); }
+.vcmp-different_kind { border-left-color: var(--warn); }

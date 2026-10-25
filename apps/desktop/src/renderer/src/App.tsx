@@ -178,7 +178,7 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} height={sizes.bottomH} onHeight={sizes.setBottomH} onResetHeight={() => sizes.setBottomH(SIZE_LIMITS.bottomH.def)} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
+      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} tf={tf} onAskAi={(t) => { setRightTab('chat'); sizes.setRightHidden(false); void chat.send(t); }} height={sizes.bottomH} onHeight={sizes.setBottomH} onResetHeight={() => sizes.setBottomH(SIZE_LIMITS.bottomH.def)} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
       <AlertToasts api={api} />
       {flow.dialog}
       {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}

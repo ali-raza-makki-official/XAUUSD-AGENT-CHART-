@@ -83,6 +83,26 @@ export class OrderService {
     return rows.flatMap((r) => { try { return [JSON.parse(r.json) as ActivityEntry]; } catch { return []; } });
   }
 
+  /** The pre-trade checklist as the user saw it when confirming (items that did not pass + what they ticked). */
+  saveCheck(commandId: string, snapshot: unknown): void {
+    const json = JSON.stringify(snapshot);
+    if (json.length > 20_000) throw new Error('Checklist snapshot too large.');
+    this.db().prepare('INSERT INTO trade_checks (command_id, workspace_id, json, at) VALUES (?, ?, ?, ?) ON CONFLICT(command_id, workspace_id) DO UPDATE SET json = excluded.json, at = excluded.at')
+      .run(commandId, WORKSPACE, json, Date.now());
+  }
+
+  /** Saved checklists joined to the MT5 position they produced (position ticket from the confirmed order record). */
+  checks(): { commandId: string; positionId: number | null; snapshot: unknown; at: number }[] {
+    const rows = this.db().prepare('SELECT c.command_id AS id, c.json AS json, c.at AS at, r.json AS rec FROM trade_checks c LEFT JOIN order_records r ON r.command_id = c.command_id AND r.workspace_id = c.workspace_id WHERE c.workspace_id = ? ORDER BY c.at DESC LIMIT 500')
+      .all(WORKSPACE) as { id: string; json: string; at: number; rec: string | null }[];
+    return rows.flatMap((r) => {
+      try {
+        const rec = r.rec ? (JSON.parse(r.rec) as OrderRecord) : null;
+        return [{ commandId: r.id, positionId: rec?.broker?.positionTicket ?? null, snapshot: JSON.parse(r.json) as unknown, at: r.at }];
+      } catch { return []; }
+    });
+  }
+
   /** Closed-deal history from MT5 (the EA returns at most the newest 500 deals). */
   async history(days: number): Promise<BrokerDeal[]> {
     const since = Math.floor(Date.now() / 1000) - Math.max(1, Math.min(365, Math.round(days))) * 86400;

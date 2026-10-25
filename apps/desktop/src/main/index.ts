@@ -9,7 +9,9 @@ import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
 import { makeTranscriber, voiceRoute } from './transcribe';
 import { ConnectionWatcher } from './connectionWatch';
-import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
+import { tickBriefing } from './briefingScheduler';
+import { atLeast, closedTrades, composeBriefing, summarize, type AiView, type BriefingInput, type CalendarEvent, type NoTradeRule, type UserView } from '@aurum/core';
+import { kvGet, kvSet, closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
 import * as db from './db';
 import { AlertService } from './alerts';
@@ -33,6 +35,33 @@ let hub: ContextHub;
 let alerts: AlertService;
 let wa: WhatsAppService;
 let watcher: ConnectionWatcher | null = null;
+let briefingTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Real data for the morning briefing. Anything that cannot be read is passed as null and left out of the text. */
+async function briefingInput(): Promise<BriefingInput> {
+  const nowMs = Date.now();
+  const [sessionsRes, snap, state, deals] = await Promise.all([
+    hub.read('sessions').catch(() => null), hub.snapshot().catch(() => null), orders.state().catch(() => null), orders.history(2).catch(() => null),
+  ]);
+  const feeds = snap?.calendar.filter((c) => c.result.ok) ?? [];
+  const events = feeds.length
+    ? noTradeEventsToday(feeds.flatMap((c) => (c.result.ok ? c.result.data.items : [])), config.context.noTrade, nowMs)
+    : null;
+  const day = deals ? summarize(closedTrades(deals).filter((t) => t.closeTime * 1000 >= nowMs - 86_400_000)) : null;
+  const parse = <T>(k: 'user_view' | 'ai_view'): T | null => { try { const j = kvGet(k); return j ? (JSON.parse(j) as T) : null; } catch { return null; } };
+  return {
+    nowMs, symbol: config.symbol, tick: bridge.lastTick ? { bid: bridge.lastTick.bid, ask: bridge.lastTick.ask } : null,
+    sessions: sessionsRes && sessionsRes.ok ? sessionsRes.data : null, events,
+    openPositions: state ? state.positions.filter((p) => p.symbol === config.brokerSymbol).map((p) => ({ side: p.type === 'buy' ? 'buy' as const : 'sell' as const, volume: p.volume, sl: p.sl ?? null, tp: p.tp ?? null, profit: p.profit })) : null,
+    yesterday: day ? { trades: day.trades, net: day.net, wins: day.wins } : null,
+    currency: state?.account?.currency ?? 'USD', myView: parse<UserView>('user_view'), aiView: parse<AiView>('ai_view'), showMoney: true, tz: wa.briefing().tz,
+  };
+}
+
+/** High-impact events (by the user's no-trade rule) in the next 18 hours. */
+function noTradeEventsToday(events: CalendarEvent[], rule: NoTradeRule, nowMs: number): CalendarEvent[] {
+  return events.filter((e) => e.time * 1000 >= nowMs - 3600_000 && e.time * 1000 <= nowMs + 18 * 3600_000 && atLeast(e.impact, rule.minImpact) && rule.currencies.includes(e.currency)).sort((a, b) => a.time - b.time);
+}
 let orders: OrderService;
 let eaHub: EaHub | null = null;
 
@@ -205,6 +234,21 @@ function registerIpc(): void {
   ipcMain.handle(IPC.ordersPrepare, (_e, c: unknown) => orders.engine.prepare(c));
   ipcMain.handle(IPC.ordersConfirm, (_e, id: unknown) => orders.engine.confirm(z.string().min(8).max(80).parse(id)));
   ipcMain.handle(IPC.ordersReconcile, (_e, id: unknown) => orders.engine.reconcile(z.string().min(8).max(80).parse(id)));
+  const checkSnap = z.object({
+    items: z.array(z.object({ id: z.string().max(40), label: z.string().max(160), status: z.enum(['pass', 'fail', 'warn', 'unknown']) })).max(20),
+    acknowledged: z.boolean(), ticked: z.array(z.string().max(40)).max(20),
+  });
+  ipcMain.handle(IPC.journalSaveCheck, (_e, id: unknown, snap: unknown) => orders.saveCheck(z.string().min(8).max(80).parse(id), checkSnap.parse(snap)));
+  ipcMain.handle(IPC.journalChecks, () => orders.checks());
+  const kvKey = z.enum(['user_view', 'ai_view']);
+  ipcMain.handle(IPC.kvGet, (_e, k: unknown) => kvGet(kvKey.parse(k)));
+  ipcMain.handle(IPC.kvSet, (_e, k: unknown, j: unknown) => kvSet(kvKey.parse(k), z.string().max(50_000).parse(j)));
+  ipcMain.handle(IPC.autoStartGet, () => app.getLoginItemSettings().openAtLogin);
+  ipcMain.handle(IPC.autoStartSet, (_e, on: unknown) => {
+    const v = z.boolean().parse(on);
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: v }); // a development run must not register itself with Windows
+    return app.getLoginItemSettings().openAtLogin;
+  });
   ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
@@ -262,6 +306,12 @@ else {
     wa.start();
     watcher = new ConnectionWatcher({ notify: (text, priority) => { void wa?.notifyStatus(text, priority); } });
     bridge.on('status', (st: FeedStatus) => watcher?.onStatus(st));
+    briefingTimer = setInterval(() => {
+      void tickBriefing({
+        settings: () => wa.briefing(), lastSent: () => wa.lastBriefing(), markSent: (d) => wa.markBriefing(d),
+        send: async () => wa.sendBriefing(composeBriefing(await briefingInput())),
+      }).catch(() => undefined);
+    }, 30_000);
     setTimeout(() => { void wa?.notifyStatus('Aurum started on your PC. It connects to MT5 by itself when the AurumBridge EA is running.', 'low'); }, 8000);
     createWindow();
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
@@ -277,6 +327,7 @@ else {
       e.preventDefault();
       quitting = true;
       watcher?.dispose();
+      if (briefingTimer) clearInterval(briefingTimer);
       void wa.notifyStatus('Aurum was closed on your PC. Alerts and the AI stop until you open it again; MT5 positions are not touched.', 'normal', 3000).finally(() => app.quit());
       return;
     }

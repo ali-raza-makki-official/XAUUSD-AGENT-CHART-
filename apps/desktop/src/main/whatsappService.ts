@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { WhatsAppGateway } from './whatsapp';
 import type { SqliteWhatsAppStore } from './whatsappStore';
+import { BriefingSettingsSchema, type BriefingSettings } from './briefingScheduler';
 import type { WaAttachment, WaAiRequest, WaAiResponse, WaExecRequest, WaProposedCall, WaQuietHours, WaUiSettings, WaUiStatus } from '../whatsappShared';
 
 /**
@@ -53,6 +54,7 @@ const QuietSchema = z.object({
 export const WaUiSettingsPatchSchema = z.object({
   enabled: z.boolean(), permission: z.enum(['notify', 'ask', 'chart', 'trade']), confirmChartActions: z.boolean(), notifications: z.boolean(), statusNotices: z.boolean(),
   quietHours: QuietSchema.partial(),
+  briefing: BriefingSettingsSchema.partial(),
 }).partial();
 
 const AI_TURN_TIMEOUT_MS = 110_000;
@@ -105,14 +107,29 @@ export class WhatsAppService {
   quietHours(): WaQuietHours {
     try { return QuietSchema.parse(JSON.parse(this.d.store.getMeta('quietHours') ?? '{}')); } catch { return QuietSchema.parse({}); }
   }
+  briefing(): BriefingSettings {
+    try { return BriefingSettingsSchema.parse(JSON.parse(this.d.store.getMeta('briefing') ?? '{}')); } catch { return BriefingSettingsSchema.parse({}); }
+  }
+  lastBriefing(): string | null { return this.d.store.getMeta('briefingLast'); }
+  markBriefing(date: string): void { this.d.store.setMeta('briefingLast', date); }
+  /** The morning briefing goes to the linked chat whenever WhatsApp is enabled (it is a message you asked for, so quiet hours apply only as for any alert). */
+  async sendBriefing(text: string): Promise<boolean> {
+    const s = this.settings();
+    if (!s.enabled || !s.notifications || this.d.store.getLink().status !== 'linked') return false;
+    const q = this.quietHours();
+    if (inQuietHours(q, this.now())) return false;
+    const r = await this.gateway.send({ id: randomUUID(), kind: 'alert_hit', priority: 'normal', text: text.slice(0, 3800), dedupeKey: `briefing:${new Date(this.now()).toISOString().slice(0, 10)}`, createdAt: this.now() }).catch(() => null);
+    return r?.status === 'sent';
+  }
   uiSettings(): WaUiSettings {
     const s = this.settings();
-    return { enabled: s.enabled, permission: s.permission, confirmChartActions: s.confirmChartActions, notifications: s.notifications, statusNotices: s.statusNotices, quietHours: this.quietHours() };
+    return { enabled: s.enabled, permission: s.permission, confirmChartActions: s.confirmChartActions, notifications: s.notifications, statusNotices: s.statusNotices, briefing: this.briefing(), quietHours: this.quietHours() };
   }
   setUiSettings(raw: unknown): WaUiSettings {
     const p = WaUiSettingsPatchSchema.parse(raw);
-    const { quietHours, ...rest } = p;
+    const { quietHours, briefing, ...rest } = p;
     this.d.store.setSettings(WhatsAppSettingsSchema.parse({ ...this.settings(), ...rest }));
+    if (briefing) this.d.store.setMeta('briefing', JSON.stringify(BriefingSettingsSchema.parse({ ...this.briefing(), ...briefing })));
     if (quietHours) this.d.store.setMeta('quietHours', JSON.stringify(QuietSchema.parse({ ...this.quietHours(), ...quietHours })));
     this.syncRunning();
     this.pushStatus();

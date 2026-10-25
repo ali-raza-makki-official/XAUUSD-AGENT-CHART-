@@ -36,3 +36,6 @@ export * from './whatsappFormat';
 export * from './modelCaps';
 export * from './performance';
 export * from './preTrade';
+export * from './behavior';
+export * from './views';
+export * from './briefing';

@@ -49,6 +49,10 @@ export function useOrderFlow(api: AurumApi | undefined, symbol: string, config?:
         if (phase.k !== 'review' || !api) return;
         const p = phase.p;
         setPhase({ k: 'sending', p });
+        if (phase.list && phase.list !== 'loading') {
+          const snapshot = { items: phase.list.items.map((i) => ({ id: i.id, label: i.label, status: i.status })), acknowledged: ack, ticked };
+          await api.journalSaveCheck(p.commandId, snapshot).catch(() => undefined); // the journal note must never block an order
+        }
         try { setPhase({ k: 'done', p, r: await api.ordersConfirm(p.commandId) }); } catch (e) { setPhase({ k: 'error', message: e instanceof Error ? e.message : String(e) }); }
       }}
       onReconcile={async () => {

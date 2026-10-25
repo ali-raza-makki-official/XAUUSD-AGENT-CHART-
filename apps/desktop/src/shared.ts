@@ -60,6 +60,15 @@ export interface AurumApi extends WhatsAppApi {
   ordersReconcile(commandId: string): Promise<OrderRecord>;
   ordersKill(on: boolean): Promise<void>;
   /** Real closed deals from MT5 for the last N days (for the journal and performance statistics). */
+  /** Remember the pre-trade checklist the user saw when confirming an order. */
+  journalSaveCheck(commandId: string, snapshot: JournalCheckSnapshot): Promise<void>;
+  journalChecks(): Promise<{ commandId: string; positionId: number | null; snapshot: JournalCheckSnapshot; at: number }[]>;
+  /** Named JSON documents: 'user_view' (your market view) and 'ai_view' (the AI's last analysis). */
+  kvGet(key: 'user_view' | 'ai_view'): Promise<string | null>;
+  kvSet(key: 'user_view' | 'ai_view', json: string): Promise<void>;
+  /** Start Aurum automatically when the user signs in to Windows. */
+  autoStartGet(): Promise<boolean>;
+  autoStartSet(on: boolean): Promise<boolean>;
   ordersHistory(days: number): Promise<import('@aurum/core').BrokerDeal[]>;
   ordersActivity(): Promise<ActivityEntry[]>;
   eaInfo(): Promise<{ port: number; token: string; connected: boolean }>;
@@ -113,6 +122,12 @@ export const IPC = {
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
   ordersHistory: 'orders:history',
+  autoStartGet: 'app:autoStartGet',
+  autoStartSet: 'app:autoStartSet',
+  kvGet: 'kv:get',
+  kvSet: 'kv:set',
+  journalSaveCheck: 'journal:saveCheck',
+  journalChecks: 'journal:checks',
   ordersActivity: 'orders:activity',
   eaInfo: 'ea:info',
   aiStatus: 'ai:status',
@@ -145,3 +160,5 @@ export const IPC = {
 } as const;
 
 export interface AiCapsInfo { provider: ProviderId | null; model: string; vision: boolean; pdf: boolean; audioIn: boolean; /** Who transcribes voice notes: the chat model itself, another provider's speech-to-text, or nobody. */ voice: { by: 'model' | 'openai' | 'gemini' | null } }
+
+export interface JournalCheckSnapshot { items: { id: string; label: string; status: 'pass' | 'fail' | 'warn' | 'unknown' }[]; acknowledged: boolean; ticked: string[] }

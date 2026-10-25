@@ -24,15 +24,17 @@ export const WA_IPC = {
 } as const;
 
 export interface WaQuietHours { enabled: boolean; start: string; end: string; tz: string; allowCritical: boolean }
+export interface WaBriefing { enabled: boolean; time: string; tz: string; weekdaysOnly: boolean }
 export interface WaUiSettings {
   enabled: boolean;
   permission: WaPermissionLevel;
   confirmChartActions: boolean;
   notifications: boolean;
   statusNotices: boolean;
+  briefing: WaBriefing;
   quietHours: WaQuietHours;
 }
-export type WaUiSettingsPatch = Partial<Omit<WaUiSettings, "quietHours">> & { quietHours?: Partial<WaQuietHours> };
+export type WaUiSettingsPatch = Partial<Omit<WaUiSettings, "quietHours" | "briefing">> & { quietHours?: Partial<WaQuietHours>; briefing?: Partial<WaBriefing> };
 export type WaGatewayState = 'stopped' | 'no_token' | 'connecting' | 'polling' | 'backoff' | 'conflict' | 'auth_error';
 export interface WaUiStatus {
   secureStorage: boolean;

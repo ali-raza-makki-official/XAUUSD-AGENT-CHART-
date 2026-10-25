@@ -1,6 +1,7 @@
 import { captureChart } from './lib/chartCapture';
+import { gatherChecklist } from './lib/pretrade';
 import {
-  AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, runAgent, runAiTool, toolCatalog,
+  AiPermissionsSchema, NoTradeRuleSchema, UserViewSchema, type AiView, buildSystemPrompt, runAgent, runAiTool, toolCatalog,
   type AccountInfo, type AgentResult, type AlertCommand, type PrepareResult, type ChartControl, type IndicatorStore, type AiPermissions, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
   type FeedStatus, type Tick, type Timeframe,
 } from '@aurum/core';
@@ -65,6 +66,11 @@ export interface TurnOpts {
 }
 
 /** One agent turn over `history` (which already ends with the user message). Shared by the chat panel and the WhatsApp headless runner. */
+function parseKv<T>(json: string | null, schema: { safeParse(v: unknown): { success: true; data: T } | { success: false } }): T | null {
+  if (!json) return null;
+  try { const r = schema.safeParse(JSON.parse(json)); return r.success ? r.data : null; } catch { return null; }
+}
+
 export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermissions, opts: TurnOpts = {}): Promise<AgentResult> {
   const caps = await st().api?.aiCaps().catch(() => null);
   const o: TurnOpts = { ...opts, ...(opts.canSeeImages === undefined && caps ? { canSeeImages: caps.vision } : {}) };
@@ -73,11 +79,17 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     ...(st().onOrderProposal && st().config && st().api ? { orders: {
       orderMode: p.orders, maxRiskPerTradePct: st().config!.risk.maxRiskPerTradePct, symbol: st().config!.brokerSymbol,
       positions: async () => (await st().api!.ordersState()).positions,
+      checklist: async (res: Parameters<NonNullable<import('@aurum/core').OrdersPort['checklist']>>[0]) => { const cfg = st().config; const a = st().api; if (!cfg || !a) return null; const t = st().tick; return gatherChecklist(a, cfg, res, t ? { bid: t.bid, ask: t.ask } : null); },
       propose: async (cmd: unknown) => { const res = await st().api!.ordersPrepare(cmd); if (res.ok && 'preview' in res) st().onOrderProposal?.(res); return res; },
     } } : {}),
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     captureChart,
+    views: {
+      getMine: async () => parseKv(await st().api!.kvGet('user_view'), UserViewSchema),
+      getAi: async () => { try { const j = await st().api!.kvGet('ai_view'); return j ? (JSON.parse(j) as AiView) : null; } catch { return null; } },
+      saveAi: (v: AiView) => st().api!.kvSet('ai_view', JSON.stringify(v)),
+    },
     deals: (days: number) => st().api!.ordersHistory(days),
     getSpec: () => st().spec, startOfToday,
     context: {

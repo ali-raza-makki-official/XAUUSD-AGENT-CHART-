@@ -114,6 +114,14 @@ export function WhatsAppSettings({ api }: { api: AurumApi }) {
         <div className="perm"><div><b>Ask for a code before chart changes</b><span className="hint">AI drawings and alert changes need CONFIRM &lt;code&gt;. Trade actions always do.</span></div><Switch label="Confirm chart actions" checked={cfg.confirmChartActions} onChange={(v) => void patch({ confirmChartActions: v })} /></div>
         <div className="perm"><div><b>Send alerts to WhatsApp</b><span className="hint">Needs the alerts module to be connected</span></div><Switch label="Send alerts to WhatsApp" checked={cfg.notifications} onChange={(v) => void patch({ notifications: v })} /></div>
         <div className="perm"><div><b>Tell me when Aurum starts, closes or loses MT5</b><span className="hint">Sent only while Aurum is running; a crash or power cut cannot send anything</span></div><Switch label="Status messages" checked={cfg.statusNotices} onChange={(v) => void patch({ statusNotices: v })} /></div>
+        <div className="perm"><div><b>Morning briefing</b><span className="hint">One message a day: market and sessions, high-impact news, your open positions, yesterday's result, your view and the AI's. Only sent while Aurum is running at that time.</span></div><Switch label="Morning briefing" checked={cfg.briefing.enabled} onChange={(v) => void patch({ briefing: { enabled: v } })} /></div>
+        {cfg.briefing.enabled && (
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <input className="input mono" type="time" aria-label="Briefing time" value={cfg.briefing.time} onChange={(e) => e.target.value && void patch({ briefing: { time: e.target.value } })} />
+            <input className="input mono" style={{ width: 190 }} aria-label="Briefing time zone" placeholder="Time zone, e.g. Asia/Karachi" defaultValue={cfg.briefing.tz} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cfg.briefing.tz) void patch({ briefing: { tz: v } }); }} />
+            <label className="ptcheck"><input type="checkbox" checked={cfg.briefing.weekdaysOnly} onChange={(e) => void patch({ briefing: { weekdaysOnly: e.target.checked } })} />Weekdays only</label>
+          </div>
+        )}
         <div className="perm"><div><b>Quiet hours for outgoing alerts</b><span className="hint">Replies to your own commands are never held back</span></div><Switch label="Quiet hours" checked={cfg.quietHours.enabled} onChange={(v) => void patch({ quietHours: { enabled: v } })} /></div>
         {cfg.quietHours.enabled && (
           <div className="row">

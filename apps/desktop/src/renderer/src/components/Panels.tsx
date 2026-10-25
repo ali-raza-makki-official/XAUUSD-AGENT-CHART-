@@ -1,12 +1,13 @@
 import { Splitter } from './Splitter';
 import { SIZE_LIMITS } from '../lib/panelSizes';
 import { useState, type ReactNode } from 'react';
-import { Maximize2, Minimize2, Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
+import { Maximize2, Minimize2, Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, Scale, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
 import { ContextPanel } from './ContextPanel';
 import { AlertsPanel } from './AlertsPanel';
 import { JournalPanel } from './JournalPanel';
+import { ViewsPanel } from './ViewsPanel';
 import type { AppConfig } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 
@@ -15,7 +16,7 @@ const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
   { id: 'feed', label: 'Feed log', icon: ScrollText, empty: 'No feed events yet.' },
   { id: 'positions', label: 'Positions', icon: Briefcase, empty: 'No open positions.' },
   { id: 'alerts', label: 'Alerts', icon: Bell, empty: 'No alerts yet. Alerts and schedules will appear here.' },
-  { id: 'setups', label: 'Setups', icon: ListChecks, empty: 'No saved setups yet.' },
+  { id: 'views', label: 'My view vs AI', icon: Scale, empty: '' },
   { id: 'journal', label: 'Journal', icon: BookOpen, empty: 'The trade journal is empty.' },
   { id: 'ai', label: 'AI actions', icon: History, empty: 'Every AI action will be listed here, each one undoable.' },
 ];
@@ -24,7 +25,7 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull, height, onHeight, onResetHeight }: { full?: boolean; onFull?: () => void; height?: number; onHeight?: (h: number) => void; onResetHeight?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
+export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull, height, onHeight, onResetHeight, tf, onAskAi }: { tf?: import('@aurum/core').Timeframe; onAskAi?: (text: string) => void; full?: boolean; onFull?: () => void; height?: number; onHeight?: (h: number) => void; onResetHeight?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -48,6 +49,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
           {tab === 'alerts' && <AlertsPanel api={api} config={config} />}
           {tab === 'positions' && positions}
           {tab === 'journal' && <JournalPanel api={api} config={config} />}
+          {tab === 'views' && <ViewsPanel api={api} tf={tf ?? 'H1'} onAskAi={(t) => onAskAi?.(t)} />}
           {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
             <div className="log">{log.map((l, i) => {
@@ -59,7 +61,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
               <div className="row" style={{ marginBottom: 6 }}><Button size="sm" icon={Undo2} onClick={onUndoAllAi}>Undo all AI changes today</Button></div>
               <div className="log">{[...aiActions].reverse().map((a, i) => <div key={i}><span className="t">{new Date(a.at).toLocaleTimeString()}</span>{a.label}</div>)}</div>
             </div>
-          ) : tab !== 'context' && tab !== 'alerts' && tab !== 'journal' && <EmptyState icon={cur.icon} title={cur.empty} />}
+          ) : tab !== 'context' && tab !== 'alerts' && tab !== 'journal' && tab !== 'views' && <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}
     </section>

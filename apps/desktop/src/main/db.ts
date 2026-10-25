@@ -228,3 +228,12 @@ export function loadContextCache(connectorId: string): { source: string; fetched
 export function deleteContextCache(connectorId: string): void {
   open().prepare('DELETE FROM context_cache WHERE workspace_id = ? AND connector_id = ?').run(WORKSPACE, connectorId);
 }
+
+/** Small named JSON documents (the user's market view, the AI's last analysis). Keys are fixed by the caller. */
+export function kvGet(key: string): string | null {
+  const r = open().prepare('SELECT json FROM kv WHERE workspace_id = ? AND key = ?').get(WORKSPACE, key) as { json: string } | undefined;
+  return r?.json ?? null;
+}
+export function kvSet(key: string, json: string): void {
+  open().prepare('INSERT INTO kv (workspace_id, key, json, at) VALUES (?, ?, ?, ?) ON CONFLICT(workspace_id, key) DO UPDATE SET json = excluded.json, at = excluded.at').run(WORKSPACE, key, json, Date.now());
+}

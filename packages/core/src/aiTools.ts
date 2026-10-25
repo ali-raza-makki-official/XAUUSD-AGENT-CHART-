@@ -12,6 +12,8 @@ import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValue
 import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
 import { closedTrades, summarize } from './performance';
+import { behaviorFlags } from './behavior';
+import { aiViewFromAnalysis, compareViews, type AiView, type UserView } from './views';
 import { type BrokerDeal } from './orderCommand';
 import { analyseStructure, zoneLife } from './structure';
 import { ORDER_TOOLS, type OrdersPort } from './orderTools';
@@ -135,6 +137,8 @@ export interface ToolContext {
   /** PNG of the chart as the user sees it (candles, indicators, drawings). Absent or null = no chart is on screen. */
   /** Real closed deals from the broker. Absent = the tool reports unavailable. */
   deals?: (days: number) => Promise<BrokerDeal[]>;
+  /** The user's written view and the AI's latest analysis (persisted by the app). */
+  views?: { getMine(): Promise<UserView | null>; getAi(): Promise<AiView | null>; saveAi(v: AiView): Promise<void> };
   captureChart?: () => Promise<{ mime: string; data: string } | null>;
 }
 
@@ -251,10 +255,23 @@ export const AI_TOOLS: AiTool[] = [
     name: 'submit_analysis',
     description: 'Deliver the final structured analysis card to the user. Call exactly once at the end of any analysis request. Use noSetup=true when there is no clear setup.',
     input: AnalysisSchema, needs: (p) => p.chartRead, needsLabel: 'Chart read',
-    run(ctx) {
+    async run(ctx, input: z.infer<typeof AnalysisSchema>) {
       // No live quote means there is nothing to analyse; a card built on nothing would look like a real analysis.
       if (ctx.getState().bid === null) return fail('unavailable', 'There is no live price (MT5 is not connected). Do not submit an analysis; tell the user the feed is unavailable.');
+      // Kept so the user's "my view vs AI view" screen compares against the AI's latest real analysis.
+      try { await ctx.views?.saveAi(aiViewFromAnalysis(input, ctx.now?.() ?? Date.now())); } catch { /* the card is still delivered */ }
       return { ok: true, data: { recorded: true } };
+    },
+  },
+  {
+    name: 'get_my_view',
+    description: 'The trader\'s OWN written view of the market (bias, levels, invalidation, note) and a comparison with your latest analysis. Use it when the user asks whether you agree with them, or before giving an opinion on a trade idea. Say plainly where you agree and where you do not, and why; never pretend to agree.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx) {
+      if (!ctx.views) return fail('unavailable', 'The views store is not available in this session.');
+      const [mine, ai] = await Promise.all([ctx.views.getMine(), ctx.views.getAi()]);
+      if (!mine) return { ok: true, data: { written: false, note: 'The user has not written their own view yet. Suggest they add it in the "My view vs AI" tab.' } };
+      return { ok: true, data: { written: true, myView: mine, yourLatestView: ai, comparison: compareViews(mine, ai, 3) } };
     },
   },
   {
@@ -331,7 +348,7 @@ export const AI_TOOLS: AiTool[] = [
   },
   {
     name: 'get_performance',
-    description: 'Statistics of the user\'s REAL closed trades from MT5 history (win rate, profit factor, expectancy, drawdown, streaks, best/worst hours and weekdays, buy vs sell). Use it to review how the user trades and to give honest feedback. Money amounts are only included when the user allowed balance sharing; ratios and counts always are. Based on at most the newest 500 deals.',
+    description: 'Statistics of the user\'s REAL closed trades from MT5 history (win rate, profit factor, expectancy, drawdown, streaks, best/worst hours and weekdays, buy vs sell). Use it to review how the user trades and to give honest feedback. Also returns behaviour flags (revenge-style size-ups, quick re-entries after a loss, overtrading, holding losers) as observations, not accusations. Money amounts are only included when the user allowed balance sharing; ratios and counts always are. Based on at most the newest 500 deals.',
     input: z.object({ days: z.number().int().min(1).max(365).default(30) }),
     needs: (p) => p.chartRead, needsLabel: 'Chart read',
     async run(ctx, input: { days: number }) {
@@ -340,9 +357,10 @@ export const AI_TOOLS: AiTool[] = [
       try { deals = await ctx.deals(input.days); } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
       const trades = closedTrades(deals);
       const s = summarize(trades);
-      if (ctx.exposeBalance) return { ok: true, data: { days: input.days, ...s } };
+      const behavior = behaviorFlags(trades).map((b) => ({ id: b.id, title: b.title, detail: b.detail }));
+      if (ctx.exposeBalance) return { ok: true, data: { days: input.days, ...s, behavior } };
       const { net, grossWin, grossLoss, avgWin, avgLoss, expectancy, maxDrawdown, bestTrade, worstTrade, byHour, byWeekday, bySide, ...ratios } = s;
-      return { ok: true, data: { days: input.days, ...ratios, moneyHidden: 'Money amounts are hidden (Settings > AI > share balance is off). Win/loss counts and ratios are real.',
+      return { ok: true, data: { days: input.days, ...ratios, behavior, moneyHidden: 'Money amounts are hidden (Settings > AI > share balance is off). Win/loss counts and ratios are real.',
         byHour: byHour.map((h) => ({ hour: h.hour, trades: h.trades })), byWeekday: byWeekday.map((w) => ({ weekday: w.weekday, trades: w.trades })), bySide: { buy: bySide.buy.trades, sell: bySide.sell.trades } } };
     },
   },

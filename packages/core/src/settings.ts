@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { StyleSchema } from './drawing';
 import { NotificationSettingsSchema } from './notifications';
+import { TimeframeSchema } from './feed';
 import { ChartLayoutSchema, DEFAULT_PANE_TIMEFRAMES, PaneTimeframesSchema } from './chartLayout';
 import { ContextSettingsSchema } from './contextConnectors';
 
@@ -61,7 +62,7 @@ export const AppConfigSchema = z.object({
   /** App-level symbol. Broker symbol is mapped separately (Exness here: GOLD). */
   symbol: z.string().default('XAUUSD'),
   brokerSymbol: z.string().default('GOLD'),
-  timeframe: z.enum(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']).default('M15'),
+  timeframe: TimeframeSchema.default('M15'),
   pipSize: z.number().positive().default(0.1),
   /** Chart workspace: single, two side by side, or 2x2. `timeframe` above is the single-chart timeframe. */
   layout: ChartLayoutSchema.default('single'),

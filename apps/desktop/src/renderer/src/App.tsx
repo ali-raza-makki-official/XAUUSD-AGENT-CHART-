@@ -115,7 +115,7 @@ export function App() {
 
   return (
     <div className={`app ${full ? `full-${full}` : ''} ${sizes.rightHidden ? 'right-hidden' : ''}`} style={{ '--chat-w': `${sizes.chatW}px`, '--bottom-h': `${sizes.bottomH}px` } as React.CSSProperties}>
-      <TopBar config={config} tf={tf} onTf={pickTf} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings('general')} aiPaused={aiPaused} aiRunning={chat.running} onToggleAi={() => setAiPaused((p) => !p)} />
+      <TopBar config={config} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings('general')} aiPaused={aiPaused} aiRunning={chat.running} onToggleAi={() => setAiPaused((p) => !p)} />
       <Toolbar
         tool={tool} onTool={setTool}
         canUndo={canUndo || ind.store.canUndo} canRedo={canRedo || ind.store.canRedo} onUndo={undo} onRedo={redo}
@@ -125,7 +125,7 @@ export function App() {
       <main className="chartwrap">
         <LayoutBar
           layout={layout} onLayout={setLayout} syncScroll={config?.syncScroll ?? false} onSync={() => void update({ syncScroll: !(config?.syncScroll ?? false) })}
-          activePane={activePane} activeTf={tf} indicatorCount={ind.indicators.length} onIndicators={() => setIndDialog(true)}
+          activePane={activePane} activeTf={tf} onTf={pickTf} indicatorCount={ind.indicators.length} onIndicators={() => setIndDialog(true)}
           chartFull={full === 'chart'} onChartFull={() => setFull(full === 'chart' ? null : 'chart')}
           rightHidden={sizes.rightHidden} onShowRight={() => sizes.setRightHidden(false)}
         />

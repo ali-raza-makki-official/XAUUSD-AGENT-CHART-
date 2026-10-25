@@ -7,7 +7,7 @@ import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
-import { makeTranscriber } from './transcribe';
+import { makeTranscriber, voiceRoute } from './transcribe';
 import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
 import * as db from './db';
@@ -163,6 +163,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.aiSetKey, (_e, p: unknown, k: unknown) => setKey(provider(p), z.string().min(8).max(500).parse(k)));
   ipcMain.handle(IPC.aiClearKey, (_e, p: unknown) => clearKey(provider(p)));
   ipcMain.handle(IPC.aiListModels, (_e, p: unknown) => llm.listModels(config, provider(p)));
+  ipcMain.handle(IPC.aiCaps, () => {
+    const { provider, model, caps } = llm.activeCaps(config);
+    const route = voiceRoute({ getConfig: () => config, getKey });
+    return { provider, model, ...caps, voice: { by: route ? route.by : null } };
+  });
   ipcMain.handle(IPC.aiTest, (_e, p: unknown) => llm.test(config, provider(p)));
   ipcMain.handle(IPC.aiChat, (_e, id: unknown, req: unknown) => {
     const media = { mime: z.string().max(100), data: z.string().max(20_000_000) };

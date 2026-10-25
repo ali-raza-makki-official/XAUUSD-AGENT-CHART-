@@ -1,6 +1,7 @@
 import { Activity, Columns2, Grid2x2, Link2, Maximize2, Minimize2, PanelRightOpen, Square } from 'lucide-react';
 import { LAYOUT_LABEL, type ChartLayout, type Timeframe } from '@aurum/core';
 import { Button, IconButton, Segmented } from './ui';
+import { TimeframeMenu } from './TimeframeMenu';
 
 interface Props {
   layout: ChartLayout;
@@ -9,6 +10,7 @@ interface Props {
   onSync: () => void;
   activePane: number;
   activeTf: Timeframe;
+  onTf: (t: Timeframe) => void;
   indicatorCount: number;
   onIndicators: () => void;
   chartFull: boolean;
@@ -18,10 +20,11 @@ interface Props {
 }
 
 /** Strip above the charts: indicators, layout and linked scrolling. Same functions the AI set_layout tool calls. */
-export function LayoutBar({ layout, onLayout, syncScroll, onSync, activePane, activeTf, indicatorCount, onIndicators, chartFull, onChartFull, rightHidden, onShowRight }: Props) {
+export function LayoutBar({ layout, onLayout, syncScroll, onSync, activePane, activeTf, onTf, indicatorCount, onIndicators, chartFull, onChartFull, rightHidden, onShowRight }: Props) {
   const icon = (l: ChartLayout) => (l === 'single' ? <Square size={14} aria-hidden="true" /> : l === 'two' ? <Columns2 size={14} aria-hidden="true" /> : <Grid2x2 size={14} aria-hidden="true" />);
   return (
     <div className="chartstrip" role="toolbar" aria-label="Chart layout and indicators">
+      <TimeframeMenu value={activeTf} onChange={onTf} label={layout === 'single' ? 'Timeframe' : `Timeframe of chart ${activePane + 1}`} />
       <Button size="sm" icon={Activity} onClick={onIndicators} aria-label="Indicators">
         Indicators{indicatorCount > 0 && <span className="count">{indicatorCount}</span>}
       </Button>

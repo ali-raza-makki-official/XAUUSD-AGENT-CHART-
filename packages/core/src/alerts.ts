@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TIMEFRAME_SECONDS, TimeframeSchema, barStart, type Candle, type FeedStatus, type Tick, type Timeframe } from './feed';
+import { TimeframeSchema, barStart, nextBarStart, type Candle, type FeedStatus, type Tick, type Timeframe } from './feed';
 import type { Drawing } from './drawing';
 import { addDays, isValidTimeZone, isWeekday, localParts, parseHHMM, zonedTimeToUtc, type Ymd } from './timezone';
 
@@ -370,10 +370,9 @@ function evalCondition(alert: Alert, snap: AlertSnapshot, st: AlertState): Probe
       return crossLevel(st, `tp${c.tpIndex}:${tp.price}`, tp.price, priceFrom(tick, exitSrc), buy ? 'above' : 'below', `${exitSrc} (TP${c.tpIndex})`, { source: exitSrc, plan: d.side, tpIndex: c.tpIndex ?? 1 });
     }
     case 'candle_close': {
-      const sec = TIMEFRAME_SECONDS[c.timeframe];
       const all = snap.lastClosedCandlesByTf[c.timeframe];
       if (!all?.length) return wait(`No closed ${c.timeframe} candles from the feed yet.`);
-      const closed = tick ? all.filter((k) => k.time + sec <= tick.time) : all;
+      const closed = tick ? all.filter((k) => nextBarStart(k.time, c.timeframe) <= tick.time) : all;
       const newest = closed[closed.length - 1];
       if (!newest) return wait(`No closed ${c.timeframe} candle yet.`);
       const prior = st.lastCandleTime;

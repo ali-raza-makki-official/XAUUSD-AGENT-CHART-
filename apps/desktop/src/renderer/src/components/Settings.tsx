@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CircleCheck, CircleX, KeyRound, ListRestart, LoaderCircle, Lock, Search, X, Zap } from 'lucide-react';
 import {
-  DEFAULT_STYLES, DRAWING_KINDS, PROVIDERS, PROVIDER_IDS,
+  DEFAULT_STYLES, DRAWING_KINDS, describeCaps, modelCaps, PROVIDERS, PROVIDER_IDS,
   type AiPermissions, type AiSettings, type AppConfig, type DrawingKind, type ProviderId, type Style,
 } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
@@ -80,6 +80,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
                 <datalist id="models">{models.map((m) => <option key={m} value={m} />)}</datalist>
                 <Button icon={ListRestart} disabled={!hasKey || busy !== null} onClick={loadModels}>{busy === 'models' ? 'Loading…' : 'Load models'}</Button>
               </div>
+              {provider && <ModelCapsLine api={api} provider={provider} model={ai.models[provider] || adapter.suggestedModel} hasKey={status?.hasKey ?? {}} />}
               <span className="hint">Model names differ by account and change over time, so load the real list from the provider instead of guessing.</span>
             </div>
             <details>
@@ -270,6 +271,25 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
           {tab !== 'ai' && tab !== 'connectors' && tab !== 'trading' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/** What the chosen model can read, and who handles voice notes. Decided per model, shown before anything is sent. */
+function ModelCapsLine({ api, provider, model, hasKey }: { api: AurumApi; provider: ProviderId; model: string; hasKey: Record<string, boolean> }) {
+  const caps = modelCaps(provider, model);
+  const [voice, setVoice] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    const t = setTimeout(() => { void api.aiCaps().then((c) => { if (live) setVoice(c.voice.by); }).catch(() => { if (live) setVoice(undefined); }); }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [api, provider, model, hasKey]);
+  if (!model) return null;
+  const voiceText = caps.audioIn ? 'this model hears them itself' : voice === 'openai' ? 'turned into text by your OpenAI key, then sent to this model' : voice === 'gemini' || voice === 'model' ? 'turned into text by Gemini, then sent to this model' : 'not available: add an OpenAI or Gemini key to use them';
+  return (
+    <div className="hint" role="note" data-testid="model-caps">
+      {describeCaps(caps)} Voice notes: {voiceText}.
     </div>
   );
 }

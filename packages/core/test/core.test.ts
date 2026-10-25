@@ -99,3 +99,19 @@ describe('defaults are on the safe side', () => {
     expect(DEFAULT_APP_CONFIG.brokerSymbol).toBe('GOLD');
   });
 });
+
+import { barStart, nextBarStart, TIMEFRAMES, TIMEFRAME_SECONDS } from '../src';
+
+describe('all MT5 timeframes', () => {
+  it('has a length for every period and aligns bars like MT5', () => {
+    for (const tf of TIMEFRAMES) expect(TIMEFRAME_SECONDS[tf]).toBeGreaterThan(0);
+    const t = Date.UTC(2026, 9, 21, 10, 37, 20) / 1000; // Wed 2026-10-21 10:37:20
+    expect(barStart(t, 'M10')).toBe(Date.UTC(2026, 9, 21, 10, 30) / 1000);
+    expect(barStart(t, 'H3')).toBe(Date.UTC(2026, 9, 21, 9, 0) / 1000);
+    expect(barStart(t, 'H12')).toBe(Date.UTC(2026, 9, 21, 0, 0) / 1000);
+    expect(barStart(t, 'W1')).toBe(Date.UTC(2026, 9, 18, 0, 0) / 1000); // Sunday
+    expect(new Date(barStart(t, 'W1') * 1000).getUTCDay()).toBe(0);
+    expect(barStart(t, 'MN1')).toBe(Date.UTC(2026, 9, 1) / 1000);
+    expect(nextBarStart(Date.UTC(2026, 1, 1) / 1000, 'MN1')).toBe(Date.UTC(2026, 2, 1) / 1000); // February is 28 days
+  });
+});

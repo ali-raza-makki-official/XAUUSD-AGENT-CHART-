@@ -34,6 +34,7 @@ const api: AurumApi = {
   aiClearKey: (p) => ipcRenderer.invoke(IPC.aiClearKey, p),
   aiListModels: (p) => ipcRenderer.invoke(IPC.aiListModels, p),
   aiTest: (p) => ipcRenderer.invoke(IPC.aiTest, p),
+  aiCaps: () => ipcRenderer.invoke(IPC.aiCaps),
   aiChat: (id, req) => ipcRenderer.invoke(IPC.aiChat, id, req),
   aiAbort: (id) => ipcRenderer.invoke(IPC.aiAbort, id),
   contextSnapshot: (force) => ipcRenderer.invoke(IPC.contextSnapshot, force),

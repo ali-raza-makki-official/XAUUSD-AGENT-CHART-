@@ -48,6 +48,8 @@ export function contextLine(c: ChatDeps): string {
 }
 
 export interface TurnOpts {
+  /** False when the chosen model cannot read images: pictures still go to the user but not to the model. */
+  canSeeImages?: boolean;
   /** Pictures produced by tools (chart screenshots), e.g. to forward to WhatsApp. */
   onImages?: (images: { mime: string; data: string }[]) => void;
   /** Extra tool definitions (name, description, JSON schema) that only `intercept` handles. */
@@ -63,7 +65,9 @@ export interface TurnOpts {
 }
 
 /** One agent turn over `history` (which already ends with the user message). Shared by the chat panel and the WhatsApp headless runner. */
-export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermissions, o: TurnOpts = {}): Promise<AgentResult> {
+export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermissions, opts: TurnOpts = {}): Promise<AgentResult> {
+  const caps = await st().api?.aiCaps().catch(() => null);
+  const o: TurnOpts = { ...opts, ...(opts.canSeeImages === undefined && caps ? { canSeeImages: caps.vision } : {}) };
   const toolCtx = () => ({
     store: st().store, indicators: st().indicators, chart: st().chart, permissions: p, getState: () => chartState(st()),
     ...(st().onOrderProposal && st().config && st().api ? { orders: {
@@ -94,6 +98,9 @@ export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermiss
       const res = await runAiTool(toolCtx(), name, input);
       const { images, ...plain } = res as typeof res & { images?: { mime: string; data: string }[] };
       if (images?.length) o.onImages?.(images);
+      if (images?.length && o.canSeeImages === false) {
+        return { ok: res.ok, content: JSON.stringify({ ...plain, data: { ...(plain as { data?: object }).data, note: 'The picture was sent to the user. This model cannot see images, so do not describe it; use get_candles and find_zones for facts.' } }) };
+      }
       return { ok: res.ok, content: JSON.stringify(plain), ...(images?.length ? { images } : {}) };
     },
     ...(o.onMessage ? { onMessage: o.onMessage } : {}),

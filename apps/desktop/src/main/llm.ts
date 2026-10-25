@@ -1,4 +1,4 @@
-import { PROVIDERS, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
+import { PROVIDERS, modelCaps, NO_CAPS, type ListedCaps, type ModelCaps, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
 import { getKey } from './secrets';
 
 const TIMEOUT_MS = 120_000;
@@ -57,12 +57,25 @@ export function abort(requestId: string): void {
   inflight.get(requestId)?.abort();
 }
 
+/** Capabilities the provider reported for models we have listed this session (only Anthropic reports them). */
+const listed = new Map<string, ListedCaps>();
+
+/** What the currently chosen model can take as input. */
+export function activeCaps(config: AppConfig): { provider: ProviderId | null; model: string; caps: ModelCaps } {
+  const provider = config.ai.provider;
+  if (!provider) return { provider: null, model: '', caps: NO_CAPS };
+  const model = config.ai.models[provider] || PROVIDERS[provider].suggestedModel;
+  return { provider, model, caps: modelCaps(provider, model, listed.get(`${provider}:${model}`)) };
+}
+
 export async function listModels(config: AppConfig, provider: ProviderId): Promise<string[]> {
   const adapter = PROVIDERS[provider];
   const key = getKey(provider);
   if (!key) throw new Error(`No API key saved for ${adapter.label}.`);
   const baseUrl = config.ai.baseUrls[provider] || adapter.defaultBaseUrl;
-  return adapter.parseModels(await send(provider, adapter.buildModels({ baseUrl, key }), key, new AbortController().signal));
+  const json = await send(provider, adapter.buildModels({ baseUrl, key }), key, new AbortController().signal);
+  for (const [id, c] of Object.entries(adapter.parseModelCaps?.(json) ?? {})) listed.set(`${provider}:${id}`, c);
+  return adapter.parseModels(json);
 }
 
 /** Smallest real round-trip with the chosen model: proves key, model name and tool-free chat all work. */

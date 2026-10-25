@@ -208,7 +208,7 @@ describe('set_layout / set_timeframe', () => {
     const c = ctx({}, {}, calls);
     expect(await run(c, 'set_layout', { layout: 'six' })).toMatchObject({ ok: false, code: 'invalid_input' });
     expect(await run(c, 'set_layout', { layout: 'two', paneTimeframes: ['H1', 'M5', 'M1'] })).toMatchObject({ ok: false, code: 'invalid_input' });
-    expect(await run(c, 'set_layout', { layout: 'single', paneTimeframes: ['W1'] })).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(await run(c, 'set_layout', { layout: 'single', paneTimeframes: ['W5'] })).toMatchObject({ ok: false, code: 'invalid_input' });
     expect(calls.layout).toHaveLength(0);
   });
 
@@ -225,7 +225,7 @@ describe('set_layout / set_timeframe', () => {
     const calls: Calls = { layout: [], tf: [], sync: [] };
     const c = ctx({}, {}, calls); // single layout
     expect(await run(c, 'set_timeframe', { timeframe: 'H1', pane: 1 })).toMatchObject({ ok: false, code: 'invalid_input' });
-    expect(await run(c, 'set_timeframe', { timeframe: 'H2' })).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(await run(c, 'set_timeframe', { timeframe: 'H5' })).toMatchObject({ ok: false, code: 'invalid_input' });
     expect(calls.tf).toHaveLength(0);
   });
 

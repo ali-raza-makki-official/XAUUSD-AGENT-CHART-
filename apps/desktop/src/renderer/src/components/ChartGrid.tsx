@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import { LoaderCircle, Monitor, Unplug } from 'lucide-react';
-import { TIMEFRAMES, type ChartLayout, type FeedStatus, type Timeframe } from '@aurum/core';
+import { TimeframeMenu } from './TimeframeMenu';
+import { type ChartLayout, type FeedStatus, type Timeframe } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 import { useCandles } from '../hooks';
 import type { ChartSync } from '../lib/chartSync';
@@ -38,7 +39,7 @@ function ChartPane({ paneId, tf, multi, active, feed, view, sync, onActivate, on
       <ChartView {...view} candles={candles} tf={tf} paneId={paneId} active={active} onActivate={onActivate} sync={sync} />
       {multi && (
         <div className="pane-head">
-          <Segmented<Timeframe> label={`Timeframe of chart ${paneId + 1}`} size="sm" value={tf} onChange={(t) => { onActivate(); onTf(t); }} options={TIMEFRAMES.map((t) => ({ value: t, label: t }))} />
+          <TimeframeMenu label={`Timeframe of chart ${paneId + 1}`} value={tf} onChange={(t) => { onActivate(); onTf(t); }} />
         </div>
       )}
       {!api && (

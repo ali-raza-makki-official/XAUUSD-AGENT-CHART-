@@ -66,6 +66,8 @@ export interface AurumApi extends WhatsAppApi {
   aiClearKey(provider: ProviderId): Promise<void>;
   aiListModels(provider: ProviderId): Promise<string[]>;
   aiTest(provider: ProviderId): Promise<{ ms: number; reply: string }>;
+  /** What the chosen model understands, and who turns a voice note into text. */
+  aiCaps(): Promise<AiCapsInfo>;
   aiChat(requestId: string, req: LlmRequest): Promise<LlmResponse>;
   aiAbort(requestId: string): Promise<void>;
   contextSnapshot(force?: boolean): Promise<ContextSnapshot>;
@@ -115,6 +117,7 @@ export const IPC = {
   aiClearKey: 'ai:clearKey',
   aiListModels: 'ai:models',
   aiTest: 'ai:test',
+  aiCaps: 'ai:caps',
   aiChat: 'ai:chat',
   aiAbort: 'ai:abort',
   contextSnapshot: 'ctx:snapshot',
@@ -137,3 +140,5 @@ export const IPC = {
   status: 'feed:status',
   account: 'feed:account',
 } as const;
+
+export interface AiCapsInfo { provider: ProviderId | null; model: string; vision: boolean; pdf: boolean; audioIn: boolean; /** Who transcribes voice notes: the chat model itself, another provider's speech-to-text, or nobody. */ voice: { by: 'model' | 'openai' | 'gemini' | null } }

@@ -1,6 +1,6 @@
 import { CircleAlert, LoaderCircle, OctagonX, Settings as Cog, ShieldCheck, TriangleAlert, Wifi, WifiOff, CircleDot, Play, SaveOff } from 'lucide-react';
-import { TIMEFRAMES, type AccountInfo, type AppConfig, type FeedStatus, type Tick, type Timeframe } from '@aurum/core';
-import { Chip, IconButton, Segmented, Tip, Button } from './ui';
+import { type AccountInfo, type AppConfig, type FeedStatus, type Tick } from '@aurum/core';
+import { Chip, IconButton, Tip, Button } from './ui';
 
 const f2 = (n: number) => n.toFixed(2);
 
@@ -16,8 +16,6 @@ function StatusChip({ status }: { status: FeedStatus }) {
 
 interface Props {
   config: AppConfig | null;
-  tf: Timeframe;
-  onTf: (tf: Timeframe) => void;
   tick: Tick | null;
   status: FeedStatus;
   account: AccountInfo | null;
@@ -28,7 +26,7 @@ interface Props {
   onToggleAi: () => void;
 }
 
-export function TopBar({ config, tf, onTf, tick, status, account, saveError, onSettings, aiPaused, aiRunning, onToggleAi }: Props) {
+export function TopBar({ config, tick, status, account, saveError, onSettings, aiPaused, aiRunning, onToggleAi }: Props) {
   const pip = config?.pipSize ?? 0.1;
   return (
     <header className="topbar">
@@ -37,8 +35,7 @@ export function TopBar({ config, tf, onTf, tick, status, account, saveError, onS
         Aurum
       </div>
       <span className="sep" />
-      <div className="sym"><b>{config?.symbol ?? 'XAUUSD'}</b><small>{config?.brokerSymbol ?? ''} · Gold vs US Dollar</small></div>
-      <Segmented<Timeframe> label="Timeframe" size="sm" value={tf} onChange={onTf} options={TIMEFRAMES.map((t) => ({ value: t, label: t }))} />
+      <div className="sym"><b>{config?.symbol ?? 'XAUUSD'}</b><small title={`${config?.brokerSymbol ?? ''} · Gold vs US Dollar`}>{config?.brokerSymbol ?? ''} · Gold vs US Dollar</small></div>
       <span className="sep" />
       <div className="quote mono" aria-label="Live quote">
         <div className="q"><span className="l">BID</span><span className="v">{tick ? f2(tick.bid) : '—'}</span></div>
@@ -46,7 +43,7 @@ export function TopBar({ config, tf, onTf, tick, status, account, saveError, onS
         <div className="q sm"><span className="l">SPREAD</span><span className="v">{tick ? `${f2(tick.spread)} · ${(tick.spread / pip).toFixed(1)} pips` : '—'}</span></div>
       </div>
       <div className="spacer" />
-      <Tip label="Candle times follow the broker server clock, like the MT5 chart"><span className="hint">Broker time</span></Tip>
+      <Tip label="Candle times follow the broker server clock, like the MT5 chart"><span className="hint broker-time">Broker time</span></Tip>
       {account ? (
         account.demo
           ? <Chip tone="ai" icon={ShieldCheck} title={`${account.server} · ${account.currency} · #${account.login}`}>DEMO · {account.server}</Chip>

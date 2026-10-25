@@ -1,17 +1,21 @@
 import { z } from 'zod';
 
-export const TIMEFRAMES = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'] as const;
+/** Every period MT5 itself offers (periods outside this list, such as 13m, 45m or a year, do not exist in MT5). */
+export const TIMEFRAMES = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M10', 'M12', 'M15', 'M20', 'M30', 'H1', 'H2', 'H3', 'H4', 'H6', 'H8', 'H12', 'D1', 'W1', 'MN1'] as const;
 export type Timeframe = (typeof TIMEFRAMES)[number];
 export const TimeframeSchema = z.enum(TIMEFRAMES);
 
+/** Nominal length of a bar. MN1 is 30 days here only for spacing; its real bars start on the 1st of each month (see barStart). */
 export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
-  M1: 60,
-  M5: 300,
-  M15: 900,
-  M30: 1800,
-  H1: 3600,
-  H4: 14400,
-  D1: 86400,
+  M1: 60, M2: 120, M3: 180, M4: 240, M5: 300, M6: 360, M10: 600, M12: 720, M15: 900, M20: 1200, M30: 1800,
+  H1: 3600, H2: 7200, H3: 10800, H4: 14400, H6: 21600, H8: 28800, H12: 43200,
+  D1: 86400, W1: 604800, MN1: 2592000,
+};
+
+export const TIMEFRAME_LABEL: Record<Timeframe, string> = {
+  M1: '1 minute', M2: '2 minutes', M3: '3 minutes', M4: '4 minutes', M5: '5 minutes', M6: '6 minutes', M10: '10 minutes', M12: '12 minutes',
+  M15: '15 minutes', M20: '20 minutes', M30: '30 minutes', H1: '1 hour', H2: '2 hours', H3: '3 hours', H4: '4 hours', H6: '6 hours',
+  H8: '8 hours', H12: '12 hours', D1: '1 day', W1: '1 week', MN1: '1 month',
 };
 
 /** Unix seconds. For MT5 feeds this is broker server time, same as the MT5 terminal chart. */
@@ -83,8 +87,17 @@ export interface FeedStatus {
 
 /** Start time of the bar that contains `time` for a timeframe. */
 export function barStart(time: number, tf: Timeframe): number {
+  if (tf === 'MN1') { const d = new Date(time * 1000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000; }
   const s = TIMEFRAME_SECONDS[tf];
+  // MT5 weekly bars open on Sunday 00:00 server time; the Unix epoch (1970-01-01) was a Thursday, so shift by 4 days.
+  if (tf === 'W1') { const shift = 4 * 86400; return Math.floor((time + shift) / s) * s - shift; }
   return Math.floor(time / s) * s;
+}
+
+/** Start of the bar after the one that begins at `start` (months differ in length). */
+export function nextBarStart(start: number, tf: Timeframe): number {
+  if (tf === 'MN1') { const d = new Date(start * 1000); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) / 1000; }
+  return start + TIMEFRAME_SECONDS[tf];
 }
 
 /** Fold a tick into the last candle (or open a new one) using the bid price. */

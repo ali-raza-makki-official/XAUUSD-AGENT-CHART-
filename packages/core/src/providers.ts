@@ -1,3 +1,4 @@
+import { modelCaps, type ListedCaps } from './modelCaps';
 import type { Block, ChatMessage, LlmRequest, LlmResponse, StopReason, ToolSpec } from './llm';
 
 export type ProviderId = 'anthropic' | 'openai' | 'gemini' | 'deepseek';
@@ -19,6 +20,8 @@ export interface ProviderAdapter {
   parseChat(json: unknown): LlmResponse;
   buildModels(cfg: Omit<ProviderCfg, 'model'>): HttpRequest;
   parseModels(json: unknown): string[];
+  /** Capabilities the provider's own model list reports (Anthropic does), keyed by model id. */
+  parseModelCaps?(json: unknown): Record<string, ListedCaps>;
   parseError(status: number, json: unknown): string;
 }
 
@@ -77,10 +80,13 @@ export const anthropic: ProviderAdapter = {
   id: 'anthropic', label: 'Anthropic (Claude)', defaultBaseUrl: 'https://api.anthropic.com', suggestedModel: 'claude-sonnet-5-5',
   caps: { tools: true, vision: true, streaming: false },
   buildChat(cfg, req) {
+    const caps = modelCaps('anthropic', cfg.model);
     const messages = req.messages.map((m) => ({
       role: m.role,
       content: m.blocks.map((b) => {
         if (b.type === 'text') return { type: 'text', text: b.text };
+        if (b.type === 'image' && !caps.vision) return { type: 'text', text: NO_IMAGE };
+        if (b.type === 'file' && !caps.pdf) return { type: 'text', text: noFile(b.name) };
         if (b.type === 'tool_call') return { type: 'tool_use', id: b.id, name: b.name, input: b.input ?? {} };
         if (b.type === 'image') return { type: 'image', source: { type: 'base64', media_type: b.mime, data: b.data } };
         if (b.type === 'file') return b.mime === 'application/pdf' ? { type: 'document', source: { type: 'base64', media_type: b.mime, data: b.data } } : { type: 'text', text: noFile(b.name) };
@@ -110,6 +116,7 @@ export const anthropic: ProviderAdapter = {
     return { url: join(cfg.baseUrl, '/v1/models?limit=100'), method: 'GET', headers: { 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01' } };
   },
   parseModels: (json) => (Array.isArray(asObj(json).data) ? asObj(json).data.map((m: Json) => String(m.id)) : []),
+  parseModelCaps: (json) => Object.fromEntries((Array.isArray(asObj(json).data) ? asObj(json).data : []).filter((m: Json) => m.capabilities && typeof m.capabilities === 'object').map((m: Json) => [String(m.id), m.capabilities as ListedCaps])),
   parseError: errMessage,
 };
 
@@ -152,7 +159,7 @@ function openaiLike(id: 'openai' | 'deepseek', label: string, baseUrl: string, s
         url: join(cfg.baseUrl, id === 'openai' ? '/v1/chat/completions' : '/chat/completions'), method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
         body: JSON.stringify({
-          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages, id === 'openai'),
+          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages, modelCaps(id, cfg.model).vision),
           ...(req.tools.length ? { tools: toolsOpenAI(req.tools) } : {}),
         }),
       };
@@ -187,13 +194,16 @@ export const gemini: ProviderAdapter = {
   id: 'gemini', label: 'Google Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com', suggestedModel: '',
   caps: { tools: true, vision: true, streaming: false },
   buildChat(cfg, req) {
+    const gcaps = modelCaps('gemini', cfg.model);
     const contents = req.messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: m.blocks.map((b) => {
         if (b.type === 'text') return { text: b.text };
         if (b.type === 'tool_call') return { functionCall: { name: b.name, args: b.input ?? {} } };
-        if (b.type === 'image') return { inlineData: { mimeType: b.mime, data: b.data } };
-        if (b.type === 'file') return { inlineData: { mimeType: b.mime, data: b.data } };
+        if (b.type === 'image' || b.type === 'file') {
+          const ok = b.type === 'image' ? gcaps.vision : gcaps.pdf;
+          return ok ? { inlineData: { mimeType: b.mime, data: b.data } } : { text: b.type === 'image' ? NO_IMAGE : noFile(b.name) };
+        }
         let response: unknown;
         try { response = JSON.parse(b.content); } catch { response = { result: b.content }; }
         return { functionResponse: { name: b.name, response: b.isError ? { error: response } : (response && typeof response === 'object' && !Array.isArray(response) ? response : { result: response }) } };

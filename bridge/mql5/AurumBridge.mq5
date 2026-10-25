@@ -128,16 +128,15 @@ int JStrArray(const string json, const string key, string &out[])
    return ArraySize(out);
   }
 
-ENUM_TIMEFRAMES TfFrom(const string s)
+// Returns false for a period MT5 does not have; the caller reports an error instead of sending another period's candles.
+bool TfFrom(const string s, ENUM_TIMEFRAMES &tf)
   {
-   if(s == "M1") return PERIOD_M1;
-   if(s == "M5") return PERIOD_M5;
-   if(s == "M15") return PERIOD_M15;
-   if(s == "M30") return PERIOD_M30;
-   if(s == "H1") return PERIOD_H1;
-   if(s == "H4") return PERIOD_H4;
-   if(s == "D1") return PERIOD_D1;
-   return PERIOD_M15;
+   string names[] = {"M1","M2","M3","M4","M5","M6","M10","M12","M15","M20","M30","H1","H2","H3","H4","H6","H8","H12","D1","W1","MN1"};
+   ENUM_TIMEFRAMES vals[] = {PERIOD_M1,PERIOD_M2,PERIOD_M3,PERIOD_M4,PERIOD_M5,PERIOD_M6,PERIOD_M10,PERIOD_M12,PERIOD_M15,PERIOD_M20,PERIOD_M30,
+                             PERIOD_H1,PERIOD_H2,PERIOD_H3,PERIOD_H4,PERIOD_H6,PERIOD_H8,PERIOD_H12,PERIOD_D1,PERIOD_W1,PERIOD_MN1};
+   for(int i = 0; i < ArraySize(names); i++)
+      if(names[i] == s) { tf = vals[i]; return true; }
+   return false;
   }
 
 // Deterministic 27-char tag for an Aurum commandId, kept in the order comment so a command can be found again
@@ -448,7 +447,9 @@ void DoCandles(const string json)
    if(!SymbolSelect(sym, true)) { Err("candles", rid, "unknown symbol " + sym); return; }
    MqlRates r[];
    ArraySetAsSeries(r, false);
-   int n = CopyRates(sym, TfFrom(tfs), 0, count, r);
+   ENUM_TIMEFRAMES tf;
+   if(!TfFrom(tfs, tf)) { Err("candles", rid, "unknown timeframe " + tfs); return; }
+   int n = CopyRates(sym, tf, 0, count, r);
    if(n <= 0) { Err("candles", rid, "no candles for " + sym + " " + tfs + " (err " + IntegerToString(GetLastError()) + ")"); return; }
    int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
    string body = "";

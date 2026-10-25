@@ -1,4 +1,4 @@
-import type { AppConfig, ProviderId, Transcriber } from '@aurum/core';
+import { modelCaps, PROVIDERS, type AppConfig, type ProviderId, type Transcriber } from '@aurum/core';
 
 /**
  * Voice note -> text through a provider the user already configured. Anthropic and DeepSeek have no audio input,
@@ -16,6 +16,25 @@ const TIMEOUT_MS = 60_000;
 const ext = (mime: string) => (/ogg|opus/i.test(mime) ? 'ogg' : /mpeg|mp3/i.test(mime) ? 'mp3' : /mp4|m4a|aac/i.test(mime) ? 'm4a' : /wav/i.test(mime) ? 'wav' : /webm/i.test(mime) ? 'webm' : 'ogg');
 const baseOf = (c: Pick<AppConfig, 'ai'>, p: ProviderId, fallback: string) => (c.ai.baseUrls[p] || fallback).replace(/\/+$/, '');
 
+export type VoiceRoute = { by: 'model' | 'gemini'; model: string } | { by: 'openai' } | null;
+
+/**
+ * Who turns a voice note into text. A chat model that hears audio itself does it directly (no other service is
+ * involved); only when it cannot do we use another provider's speech-to-text that the user has a key for.
+ */
+export function voiceRoute(d: Pick<TranscriberDeps, 'getConfig' | 'getKey'>): VoiceRoute {
+  const cfg = d.getConfig();
+  const active = cfg.ai.provider;
+  if (active) {
+    const model = cfg.ai.models[active] || PROVIDERS[active].suggestedModel;
+    if (modelCaps(active, model).audioIn && active === 'gemini' && d.getKey('gemini')) return { by: 'model', model };
+  }
+  if (d.getKey('openai')) return { by: 'openai' };
+  const gm = cfg.ai.models.gemini;
+  if (d.getKey('gemini') && gm && modelCaps('gemini', gm).audioIn) return { by: 'gemini', model: gm };
+  return null;
+}
+
 export function makeTranscriber(d: TranscriberDeps): Transcriber {
   const f = d.fetchImpl ?? fetch;
   return {
@@ -23,8 +42,9 @@ export function makeTranscriber(d: TranscriberDeps): Transcriber {
       if (audio.bytes.byteLength > MAX_BYTES) throw new Error('That voice note is too long.');
       const cfg = d.getConfig();
       const mime = audio.mimeType.split(';')[0]!.trim() || 'audio/ogg';
+      const route = voiceRoute(d);
       const openaiKey = d.getKey('openai');
-      if (openaiKey) {
+      if (route?.by === 'openai' && openaiKey) {
         const form = new FormData();
         form.append('model', 'gpt-4o-mini-transcribe');
         form.append('file', new Blob([audio.bytes as BlobPart], { type: mime }), `voice.${ext(mime)}`);
@@ -36,8 +56,8 @@ export function makeTranscriber(d: TranscriberDeps): Transcriber {
         return String(json.text ?? '');
       }
       const geminiKey = d.getKey('gemini');
-      const model = cfg.ai.models.gemini;
-      if (geminiKey && model) {
+      if ((route?.by === 'model' || route?.by === 'gemini') && geminiKey) {
+        const model = route.model;
         const res = await f(`${baseOf(cfg, 'gemini', 'https://generativelanguage.googleapis.com')}/v1beta/models/${model.replace(/^models\//, '')}:generateContent`, {
           method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiKey }, signal: AbortSignal.timeout(TIMEOUT_MS),
           body: JSON.stringify({ contents: [{ role: 'user', parts: [

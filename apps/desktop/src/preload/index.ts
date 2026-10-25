@@ -28,6 +28,7 @@ const api: AurumApi = {
   ordersReconcile: (id) => ipcRenderer.invoke(IPC.ordersReconcile, id),
   ordersKill: (on) => ipcRenderer.invoke(IPC.ordersKill, on),
   ordersActivity: () => ipcRenderer.invoke(IPC.ordersActivity),
+  eaInfo: () => ipcRenderer.invoke(IPC.eaInfo),
   aiStatus: () => ipcRenderer.invoke(IPC.aiStatus),
   aiSetKey: (p, k) => ipcRenderer.invoke(IPC.aiSetKey, p, k),
   aiClearKey: (p) => ipcRenderer.invoke(IPC.aiClearKey, p),

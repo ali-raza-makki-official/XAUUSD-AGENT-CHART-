@@ -4,11 +4,15 @@
 a loopback WebSocket server and streams data / executes commands. It is an ALTERNATIVE to the Python bridge, not a replacement.
 
 ## Status: read this first
-- The EA file is written, **never compiled and never run**. There is no MetaEditor in the build environment. Expect to fix a compiler
-  message or two on first compile, then test on a DEMO account.
-- **The Aurum side is not built.** The app does not yet contain the WebSocket hub (server on `HubPort`), the token pairing UI, or a
-  "feed provider" switch between the Python bridge and the EA. Until that exists, the EA has nothing to talk to.
-- The Python bridge (`bridge/aurum_bridge`) stays the default and is what has been tested.
+- **The app side is built** (`apps/desktop/src/main/eaHub.ts`): a loopback WebSocket hub that the EA connects to, token-checked, which
+  re-exposes the EA through the same local HTTP interface as the Python bridge. Chart, orders, alerts and risk gate are unchanged.
+  Settings > General > "How Aurum connects to MT5" switches between "Python bridge" and "EA bridge" and shows the HubPort and AuthToken to paste into the EA.
+- Checked in real Electron against a **Node stand-in that speaks the protocol** (not the real EA): connect, candles, DEMO account, live
+  bid, positions, SL modify through the Confirm dialog, wrong token rejected.
+- **The EA file itself (`bridge/mql5/AurumBridge.mq5`) has never been compiled or run.** There is no MetaEditor in the build environment. Expect
+  to fix a compiler message or two, then test on a DEMO account. The Python bridge stays the default and is the tested path.
+- Not supported over the EA yet: pending orders (open_pending, cancel_pending) and pending-order lists. Reconciliation after an unknown
+  result uses the EA's `find` (position/deal tag lookup) and may stay "inconclusive" more often than with the Python bridge.
 
 ## Why have it
 | | Python bridge (today) | EA bridge |
@@ -42,9 +46,6 @@ Aurum to EA: `ping`, `subscribe` {symbols}, `candles` {req_id,symbol,tf,count<=5
 Times are the broker server clock (unix seconds), same as the Python bridge and the MT5 chart.
 
 ## What is left to make it usable
-1. Compile the EA and fix compiler messages; test on a demo account with a throwaway WebSocket echo server first.
-2. In `apps/desktop/src/main`: a loopback WebSocket hub (needs the `ws` package), a per-install token shown in Settings, and a
-   `BrokerPort` / feed adapter that maps the messages above onto the same interfaces the Python bridge uses (`BridgeManager.http`,
-   `OrderService` `bridgePort`). Keep one active provider at a time.
-3. Settings switch "MT5 connection: Python bridge | EA bridge", the same risk gate and confirm dialogs (nothing changes there).
-4. Real MT5 test: filling modes, retcodes, comment on closing deals, hedging vs netting.
+1. Compile the EA in MetaEditor, fix compiler messages, attach it on a DEMO terminal with the HubPort and AuthToken from Aurum.
+2. Real MT5 checks: filling modes, retcodes, comment kept on closing deals, hedging vs netting, tick rate.
+3. Pending orders and `history_orders` evidence over the EA, if you need them.

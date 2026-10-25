@@ -70,12 +70,19 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   lastTick: Tick | null = null;
   account: AccountInfo | null = null;
 
-  async start(brokerSymbol: string, mt5Path = '', trading = false): Promise<void> {
+  async start(brokerSymbol: string, mt5Path = '', trading = false, external?: { port: number; token: string }): Promise<void> {
     await this.stop();
     const gen = ++this.generation;
-    this.setStatus({ state: 'starting', message: 'Starting MT5 bridge…' });
-    this.port = await freePort();
-    this.token = randomBytes(24).toString('hex'); // per-launch secret, never exposed to the renderer
+    this.setStatus({ state: 'starting', message: external ? 'Waiting for the MT5 EA…' : 'Starting MT5 bridge…' });
+    this.port = external ? external.port : await freePort();
+    this.token = external ? external.token : randomBytes(24).toString('hex'); // per-launch secret, never exposed to the renderer
+    if (!external) this.spawnBridge(gen, brokerSymbol, mt5Path, trading);
+    this.timer = setInterval(() => void this.pollTick(gen), TICK_POLL_MS);
+    this.accountTimer = setInterval(() => void this.pollAccount(gen), ACCOUNT_POLL_MS);
+    void this.pollAccount(gen);
+  }
+
+  private spawnBridge(gen: number, brokerSymbol: string, mt5Path: string, trading: boolean): void {
     const { cmd, args, label } = bridgeCommand();
     const proc = spawn(cmd, args, {
       cwd: bridgeDir(),
@@ -104,9 +111,6 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
         this.setStatus({ state: 'error', message: `MT5 bridge stopped (code ${code}). ${stderr.trim()}` });
       }
     });
-    this.timer = setInterval(() => void this.pollTick(gen), TICK_POLL_MS);
-    this.accountTimer = setInterval(() => void this.pollAccount(gen), ACCOUNT_POLL_MS);
-    void this.pollAccount(gen);
   }
 
   async stop(): Promise<void> {

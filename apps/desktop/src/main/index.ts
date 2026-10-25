@@ -17,6 +17,9 @@ import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConn
 import { getDb } from './db';
 import { WhatsAppService } from './whatsappService';
 import { OrderService } from './orders';
+import { EaHub } from './eaHub';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { SqliteWhatsAppStore } from './whatsappStore';
 import { registerWhatsAppIpc } from './whatsappIpc';
 import { ContextHub } from './contextHub';
@@ -28,6 +31,29 @@ let hub: ContextHub;
 let alerts: AlertService;
 let wa: WhatsAppService;
 let orders: OrderService;
+let eaHub: EaHub | null = null;
+
+async function ensureEaHub(): Promise<EaHub> {
+  if (eaHub) return eaHub;
+  const file = join(app.getPath('userData'), 'ea-token.txt');
+  let token = '';
+  try { token = readFileSync(file, 'utf8').trim(); } catch { /* first run */ }
+  if (token.length < 16) { token = randomBytes(18).toString('hex'); writeFileSync(file, token, { mode: 0o600 }); }
+  eaHub = new EaHub(8766, token);
+  await eaHub.start();
+  return eaHub;
+}
+
+/** Starts the MT5 connection the user chose: the Python bridge, or the EA hub that mimics its HTTP interface. */
+async function startFeed(): Promise<void> {
+  if (config.mt5Mode === 'ea') {
+    const hub = await ensureEaHub();
+    hub.config(config.brokerSymbol, config.trading.enabled);
+    await bridge.start(config.brokerSymbol, '', config.trading.enabled, { port: hub.httpPort, token: hub.httpToken });
+  } else {
+    await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
+  }
+}
 let win: BrowserWindow | null = null;
 
 const CSP =
@@ -82,6 +108,7 @@ function registerIpc(): void {
       .object({
         brokerSymbol: z.string().min(1).max(32),
         mt5Path: z.string().max(400),
+        mt5Mode: z.enum(['python', 'ea']),
         trading: z.object({ enabled: z.boolean() }),
         risk: RiskSettingsSchema,
         pipSize: z.number().positive(),
@@ -99,10 +126,10 @@ function registerIpc(): void {
       })
       .partial()
       .parse(patch);
-    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path) || (allowed.trading !== undefined && allowed.trading.enabled !== config.trading.enabled);
+    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path) || (allowed.trading !== undefined && allowed.trading.enabled !== config.trading.enabled) || (allowed.mt5Mode !== undefined && allowed.mt5Mode !== config.mt5Mode);
     config = saveConfig(allowed, config);
     if (allowed.context) hub.sync();
-    if (symbolChanged) await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
+    if (symbolChanged) await startFeed();
     return config;
   });
   ipcMain.handle(IPC.candles, (_e, tf: unknown, count: unknown) =>
@@ -170,7 +197,8 @@ function registerIpc(): void {
   ipcMain.handle(IPC.ordersReconcile, (_e, id: unknown) => orders.engine.reconcile(z.string().min(8).max(80).parse(id)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
-  ipcMain.handle(IPC.reconnect, () => bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled));
+  ipcMain.handle(IPC.reconnect, () => startFeed());
+  ipcMain.handle(IPC.eaInfo, async () => { const h = await ensureEaHub(); return { port: h.eaPort, token: h.eaToken, connected: h.connected }; });
   ipcMain.handle(IPC.snapshot, () => ({ status: bridge.status, tick: bridge.lastTick, account: bridge.account }));
   registerAlertIpc(ipcMain, alerts, send);
   bridge.on('tick', (t) => send(IPC.tick, t));
@@ -224,7 +252,7 @@ else {
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
     void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
     hub.start();
-    await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
+    await startFeed();
   });
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', () => {
@@ -232,6 +260,7 @@ else {
     alerts?.stop();
     void wa?.stop();
     void bridge.stop();
+    eaHub?.stop();
     closeDb();
   });
 }

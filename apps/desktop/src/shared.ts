@@ -60,6 +60,7 @@ export interface AurumApi extends WhatsAppApi {
   ordersReconcile(commandId: string): Promise<OrderRecord>;
   ordersKill(on: boolean): Promise<void>;
   ordersActivity(): Promise<ActivityEntry[]>;
+  eaInfo(): Promise<{ port: number; token: string; connected: boolean }>;
   aiStatus(): Promise<{ secureStorage: boolean; hasKey: Record<ProviderId, boolean> }>;
   aiSetKey(provider: ProviderId, key: string): Promise<void>;
   aiClearKey(provider: ProviderId): Promise<void>;
@@ -108,6 +109,7 @@ export const IPC = {
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
   ordersActivity: 'orders:activity',
+  eaInfo: 'ea:info',
   aiStatus: 'ai:status',
   aiSetKey: 'ai:setKey',
   aiClearKey: 'ai:clearKey',

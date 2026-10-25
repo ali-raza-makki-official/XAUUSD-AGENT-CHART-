@@ -25,7 +25,7 @@ const Price = z.number().positive();
 const Reason = z.string().min(3).max(300).describe('Why, in one or two sentences. Shown to the user.');
 const Ticket = z.number().int().positive();
 
-const ProposalInput = z.discriminatedUnion('action', [
+const ProposalStrict = z.discriminatedUnion('action', [
   z.object({ action: z.literal('open_market'), side: z.enum(['buy', 'sell']), sl: Price, tp: Price.optional(), volume: z.number().positive().optional(), riskPct: z.number().positive().max(100).optional(), reason: Reason }),
   z.object({ action: z.literal('open_pending'), orderType: PendingTypeSchema, price: Price, sl: Price, tp: Price.optional(), volume: z.number().positive().optional(), riskPct: z.number().positive().max(100).optional(), reason: Reason }),
   z.object({ action: z.literal('modify_sltp'), ticket: Ticket, ticketKind: z.enum(['position', 'order']).optional(), sl: Price.nullable().optional(), tp: Price.nullable().optional(), reason: Reason }),
@@ -34,7 +34,26 @@ const ProposalInput = z.discriminatedUnion('action', [
   z.object({ action: z.literal('cancel_pending'), ticket: Ticket, reason: Reason }),
   z.object({ action: z.literal('close_all'), reason: Reason }),
 ]);
-type Proposal = z.infer<typeof ProposalInput>;
+type Proposal = z.infer<typeof ProposalStrict>;
+
+/**
+ * What the model sees. Providers such as OpenAI and DeepSeek require the tool schema root to be a plain
+ * `type: "object"`, so the per-action rules live in ProposalStrict and are enforced in run().
+ */
+const ProposalInput = z.object({
+  action: z.enum(['open_market', 'open_pending', 'modify_sltp', 'close_position', 'partial_close', 'cancel_pending', 'close_all']),
+  side: z.enum(['buy', 'sell']).optional().describe('open_market: buy or sell.'),
+  orderType: PendingTypeSchema.optional().describe('open_pending: buy_limit, sell_limit, buy_stop or sell_stop.'),
+  price: Price.optional().describe('open_pending: the entry price.'),
+  sl: Price.optional().describe('Stop loss price. Required for open_market and open_pending; for modify_sltp the new stop loss.'),
+  tp: Price.optional().describe('Take profit price (optional).'),
+  volume: z.number().positive().optional().describe('Lots. Leave out and give riskPct to let the app size it.'),
+  riskPct: z.number().positive().max(100).optional().describe('Percent of balance to risk; the app sizes the lots with code.'),
+  ticket: Ticket.optional().describe('Position or order ticket for modify_sltp, close_position, partial_close, cancel_pending.'),
+  ticketKind: z.enum(['position', 'order']).optional(),
+  percent: z.number().gt(0).lt(100).optional().describe('partial_close: percent of the position to close; rounded DOWN to the broker volume step.'),
+  reason: Reason,
+});
 
 const fail = (code: Extract<ToolResult, { ok: false }>['code'], error: string): ToolResult => ({ ok: false, code, error });
 
@@ -50,7 +69,12 @@ export const ORDER_TOOLS: AiTool[] = [
     // Hidden from the model until the app has an orders service and the owner picks confirm mode.
     needs: (p) => p.chartRead && p.orders !== 'suggest',
     needsLabel: 'Chart read and orders mode confirm',
-    async run(ctx, input: Proposal): Promise<ToolResult> {
+    async run(ctx, raw: z.infer<typeof ProposalInput>): Promise<ToolResult> {
+      const strict = ProposalStrict.safeParse(raw);
+      if (!strict.success) {
+        return fail('invalid_input', `For action '${raw.action}': ${strict.error.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; ')}`);
+      }
+      const input: Proposal = strict.data;
       const port = ctx.orders;
       if (!port) return fail('unavailable', 'Order previews are not available in this session.');
       const now = ctx.now?.() ?? Date.now();

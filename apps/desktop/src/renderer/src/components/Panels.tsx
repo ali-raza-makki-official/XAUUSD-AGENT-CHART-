@@ -39,7 +39,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
         </IconButton>
       </div>
       {open && (
-        <div className="content" role="tabpanel" style={tab === 'alerts' || tab === 'positions' ? { height: 240 } : undefined}>
+        <div className="content" role="tabpanel" style={undefined}>
           {tab === 'alerts' && <AlertsPanel api={api} config={config} />}
           {tab === 'positions' && positions}
           {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}

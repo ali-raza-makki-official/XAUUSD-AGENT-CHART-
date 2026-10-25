@@ -1,12 +1,36 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 
 type Pos = 'top' | 'bottom' | 'left' | 'right';
 
-/** CSS tooltip. Label shows on hover and keyboard focus. */
-export const Tip = ({ label, pos = 'bottom', children }: { label: string; pos?: Pos; children: ReactNode }) => (
-  <span className="tip" data-tip={label} data-pos={pos}>{children}</span>
-);
+/** Tooltip rendered in a portal with fixed positioning, so scroll containers and panels can never clip or cover it. */
+export function Tip({ label, pos = 'bottom', children }: { label: string; pos?: Pos; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const show = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      setAt(
+        pos === 'right' ? { x: r.right + 8, y: r.top + r.height / 2 }
+        : pos === 'left' ? { x: r.left - 8, y: r.top + r.height / 2 }
+        : pos === 'top' ? { x: r.left + r.width / 2, y: r.top - 6 }
+        : { x: r.left + r.width / 2, y: r.bottom + 6 },
+      );
+    }, 350);
+  };
+  const hide = () => { window.clearTimeout(timer.current); setAt(null); };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <span ref={ref} className="tip" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onMouseDown={hide}>
+      {children}
+      {at && createPortal(<span role="tooltip" className="tip-pop" data-pos={pos} style={{ left: at.x, top: at.y }}>{label}</span>, document.body)}
+    </span>
+  );
+}
 
 interface BtnProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title'> {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';

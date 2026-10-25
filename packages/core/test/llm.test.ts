@@ -210,3 +210,21 @@ describe('history repair and privacy', () => {
     expect((await runAiTool(open, 'calculate_risk_reward', { side: 'buy', entry: 3350, stopLoss: 3343, takeProfits: [] }) as any).data.sizing.actualRisk).toBeGreaterThan(0);
   });
 });
+
+describe('tool schemas are accepted by OpenAI-style providers', () => {
+  it('every tool, with every permission on, has a root type:object and no root union', () => {
+    const all = toolCatalog(AiPermissionsSchema.parse({ drawingsEdit: true, indicatorsEdit: true, chartControl: true, alertsAndSetups: true, orders: 'confirm', sltpAndPartialClose: true }));
+    expect(all.map((t) => t.name)).toContain('propose_order_action');
+    for (const t of all) {
+      const s = t.inputSchema as Record<string, unknown>;
+      expect(s.type, t.name).toBe('object');
+      for (const k of ['anyOf', 'oneOf', 'allOf', 'enum', 'not']) expect(s[k], `${t.name} root ${k}`).toBeUndefined();
+    }
+  });
+  it('propose_order_action enforces per-action fields in code', async () => {
+    const c = ctx();
+    const ctxOrders = { ...c, permissions: AiPermissionsSchema.parse({ orders: 'confirm' }), orders: { orderMode: 'confirm' as const, maxRiskPerTradePct: 0.5, symbol: 'GOLD', positions: async () => [], propose: async () => ({ ok: false as const, error: 'unused' }) } };
+    const r = await runAiTool(ctxOrders as never, 'propose_order_action', { action: 'modify_sltp', reason: 'no ticket given' });
+    expect(r).toMatchObject({ ok: false, code: 'invalid_input' });
+  });
+});

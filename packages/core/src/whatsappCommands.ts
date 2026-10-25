@@ -232,7 +232,8 @@ const IDENTITY_REPLY_COOLDOWN_MS = 60 * 60_000;
 
 const CONFIRM_RE = /^confirm\s+(\d{4,8})$/i;
 const CODE_RE = /^(?:code\s*:?\s*)?(\d{6})$/i;
-const YES_RE = /^(y|yes|ok|okay|confirm|confirmed|sure|do it|go|go ahead|haan|han|ji|theek hai)[.!]?$/i;
+const YES_RE = /^(1|y|yes|ok|okay|confirm|confirmed|sure|do it|go|go ahead|haan|han|ji|theek hai)[.!]?$/i;
+const NO_RE = /^(2|n|no|nahi|nahin|na)[.!]?$/i;
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const maskCodes = (s: string) => s.replace(/(confirm\s+)\d{4,8}/gi, '$1****').replace(/\b\d{6}\b/g, '******');
@@ -431,9 +432,12 @@ export class WhatsAppPipeline {
       return this.handleConfirm(m, confirm[1]!, commandId, done);
     }
     if (/^\/?cancel$/i.test(text)) return this.handleCancel(m, commandId, done);
-    if (YES_RE.test(text) && this.d.store.getPending()) {
-      await this.reply(m.from, 'A plain "yes" or an emoji is not enough. Reply exactly CONFIRM <code> from the preview, or /cancel.', 'confirm', { replyTo: m.id, commandId });
-      return done('rejected_code', 'no code supplied');
+    const waiting = this.d.store.getPending();
+    if (waiting && !viaVoice && YES_RE.test(text)) return this.handleConfirm(m, waiting.code, commandId, done);
+    if (waiting && NO_RE.test(text)) return this.handleCancel(m, commandId, done);
+    if (waiting && viaVoice && YES_RE.test(text)) {
+      await this.reply(m.from, 'A spoken "yes" cannot confirm. Type 1 to confirm or 2 to cancel.', 'confirm', { replyTo: m.id, commandId });
+      return done('rejected_code', 'voice cannot confirm');
     }
     if (text.startsWith('/')) return this.handleSlash(m, text, commandId, done);
     return this.handleAi(m, text, attachments, viaVoice, commandId, done);
@@ -579,7 +583,7 @@ export class WhatsAppPipeline {
     const base = { commandId: actionCommandId, code, action, userKey: m.from };
     this.d.store.savePending({ id: actionCommandId, ...base, binding: confirmationBinding(base), createdAt, expiresAt: createdAt + s.confirmTtlSec * 1000, attempts: 0, status: 'pending' });
     const mins = s.confirmTtlSec >= 120 && s.confirmTtlSec % 60 === 0 ? `${s.confirmTtlSec / 60} minutes` : `${s.confirmTtlSec} seconds`;
-    await this.reply(m.from, `${action.preview}\n\nNothing has been done yet. To go ahead reply exactly:\nCONFIRM ${code}\nValid for ${mins}, one use. /cancel to drop it.`, 'confirm', { replyTo: m.id, commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
+    await this.reply(m.from, `${action.preview}\n\nNothing has been done yet.\n\n1 - Confirm\n2 - Cancel\n\nReply 1 or 2. Valid for ${mins}, one use.`, 'confirm', { replyTo: m.id, commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
     this.hist({ direction: 'system', kind: 'confirm', commandId: actionCommandId, messageId: m.id, summary: clip(`Confirmation required: ${action.preview}`, 160), status: 'confirm_required' });
     done('confirm_required', 'waiting for code');
   }

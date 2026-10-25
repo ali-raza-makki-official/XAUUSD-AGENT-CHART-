@@ -73,7 +73,7 @@ describe.each([['memory', () => new MemoryWhatsAppStore()], ['sqlite', () => new
   it('confirmation: valid code executes exactly once, bound to the proposing command', async () => {
     const r = rig({ store: mk() });
     await r.p.handleBatch([msg('a1', 'please close my trade')]);
-    expect(r.texts().join('\n')).toMatch(/CONFIRM 4821/);
+    expect(r.texts().join('\n')).toMatch(/1 - Confirm/);
     expect(r.executed).toEqual([]);
     await r.p.handleBatch([msg('a2', 'CONFIRM 4821')]);
     expect(r.executed).toHaveLength(1);
@@ -87,8 +87,6 @@ describe.each([['memory', () => new MemoryWhatsAppStore()], ['sqlite', () => new
   it('confirmation: reused code, wrong code, "yes", expired code and voice-less cases are refused', async () => {
     const r = rig({ store: mk() });
     await r.p.handleBatch([msg('b1', 'close it')]);
-    await r.p.handleBatch([msg('b2', 'yes')]);
-    expect(r.texts().at(-1)).toMatch(/not enough/);
     await r.p.handleBatch([msg('b3', 'CONFIRM 1111')]);
     expect(r.texts().at(-1)).toMatch(/Wrong code. 2 tries left/);
     await r.p.handleBatch([msg('b4', 'CONFIRM 4821')]);
@@ -126,7 +124,7 @@ describe.each([['memory', () => new MemoryWhatsAppStore()], ['sqlite', () => new
     expect(r.texts().at(-1)).toMatch(/needs the "trade" permission/);
     const r2 = rig({ store: mk(), settings: { permission: 'chart' } });
     await r2.p.handleBatch([msg('g1', '/resume')]);
-    expect(r2.texts().at(-1)).toMatch(/CONFIRM 4821/);
+    expect(r2.texts().at(-1)).toMatch(/1 - Confirm/);
   });
 
   it('notify-only ignores commands; slash shortcuts and the AI stub work', async () => {

@@ -179,6 +179,34 @@ function pricesOf(d: NewDrawingInput): number[] {
   }
 }
 
+function timesOf(d: NewDrawingInput): number[] {
+  switch (d.kind) {
+    case 'hline': return [];
+    case 'vline': return [d.time];
+    case 'text': return [d.at.time];
+    case 'channel': return [d.a.time, d.b.time, d.c.time];
+    case 'position': return [d.entryTime];
+    default: return [d.a.time, d.b.time];
+  }
+}
+
+const DAY = 86_400;
+/**
+ * Every time anchor must lie inside real market history (about two years of daily candles) and not far into the future.
+ * An anchor outside it cannot be a real candle, and a zone that starts "before the chart" stays glued to the left edge.
+ */
+async function anchorIssue(ctx: ToolContext, items: NewDrawingInput[]): Promise<string | null> {
+  const times = items.flatMap(timesOf);
+  if (!times.length) return null;
+  let daily: Candle[];
+  try { daily = await ctx.getCandles('D1', 500); } catch { return null; } // history unavailable: the other checks still apply
+  const first = daily[0]?.time, last = daily[daily.length - 1]?.time;
+  if (first === undefined || last === undefined) return null;
+  const bad = times.find((t) => t < first - DAY || t > last + 30 * DAY);
+  if (bad === undefined) return null;
+  return `Time ${bad} (${new Date(bad * 1000).toISOString()}) is outside real market history (${new Date(first * 1000).toISOString().slice(0, 10)} to ${new Date(last * 1000).toISOString().slice(0, 10)}). Use the exact times returned by find_zones or get_candles (unix seconds, broker clock), never a guessed time.`;
+}
+
 function toDrawing(ctx: ToolContext, d: NewDrawingInput, commandId: string): Drawing {
   const { reason, label, note, timeframes, color, kind, ...geo } = d as NewDrawingInput & Record<string, unknown>;
   const geometry = Object.fromEntries(Object.entries(geo).filter(([, v]) => v !== undefined));
@@ -381,6 +409,8 @@ export const AI_TOOLS: AiTool[] = [
     async run(ctx, input: { items: NewDrawingInput[] }) {
       const bad = priceSanity(ctx, input.items.flatMap(pricesOf));
       if (bad) return fail('invalid_input', bad);
+      const off = await anchorIssue(ctx, input.items);
+      if (off) return fail('invalid_input', off);
       const dead = await deadZoneIssue(ctx, input.items);
       if (dead) return fail('invalid_input', dead);
       const commandId = cid(ctx);

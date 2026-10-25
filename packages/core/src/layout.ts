@@ -117,7 +117,9 @@ export function layoutDrawing(d: Drawing, p: Proj, tfLabel = ''): Layout {
       L.shapes.push({ t: 'rect', x, y, w, h, fill: rgba(color, d.style.fillOpacity), stroke: color, strokeWidth: d.style.width, dash });
       L.hit.push({ t: 'rect', x, y, w, h });
       const kind = d.zoneType === 'custom' ? '' : d.zoneType[0]!.toUpperCase() + d.zoneType.slice(1);
-      text(x + 6, y + 12, [tag + kind, d.label].filter(Boolean).join(' · ').replace(/^AI · $/, 'AI'));
+      // A zone that begins before the loaded history keeps its label at the left edge and says so, so it does not look glued there by a bug.
+      const before = x < 0;
+      text(Math.max(x, 0) + 6, y + 12, `${before ? '◂ ' : ''}${[tag + kind, d.label].filter(Boolean).join(' · ').replace(/^AI · $/, 'AI')}`);
       L.handles.push({ key: 'a', x: p.x(d.a.time), y: ya }, { key: 'b', x: p.x(d.b.time), y: yb });
       break;
     }

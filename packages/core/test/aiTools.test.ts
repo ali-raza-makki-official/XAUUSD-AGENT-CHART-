@@ -25,6 +25,7 @@ describe('AI tools', () => {
 
   it('creates a batch on the AI layer with the reason and one undo step', async () => {
     const c = ctx();
+    (c as { getCandles: unknown }).getCandles = async () => [1_780_000_000, 1_792_900_000].map((time) => ({ time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 3 }));
     const r = await run(c, 'create_drawing', { items: [
       { kind: 'hline', price: 3340, label: 'S1', reason: 'Swing low rejected twice' },
       { kind: 'zone', a: { time: '2026-10-23T10:00:00', price: 3345 }, b: { time: 1_790_000_000, price: 3338 }, zoneType: 'demand', reason: 'Demand base' },
@@ -111,5 +112,19 @@ describe('dead zones are not drawn live', () => {
     expect(JSON.stringify(bad)).toMatch(/no longer valid/);
     const ok = await runAiTool(ctx, 'create_drawing', zone(false, 400));
     expect(ok.ok).toBe(true);
+  });
+});
+
+describe('anchors must be real times', () => {
+  it('refuses a zone that starts before any real candle, accepts one inside history', async () => {
+    const day = (t: number) => ({ time: t, open: 1, high: 2, low: 0.5, close: 1.5, volume: 1 });
+    const c = ctx();
+    (c as { getCandles: unknown }).getCandles = async () => [day(1_780_000_000), day(1_792_900_000)];
+    const zone = (t: number) => ({ items: [{ kind: 'zone', a: { time: t, price: 3345 }, b: { time: 1_792_800_000, price: 3338 }, zoneType: 'supply', extendRight: false, reason: 'test zone anchor' }] });
+    const bad = await run(c, 'create_drawing', zone(1_000_000));
+    expect(bad).toMatchObject({ ok: false, code: 'invalid_input' });
+    expect(JSON.stringify(bad)).toMatch(/outside real market history/);
+    expect((await run(c, 'create_drawing', zone(1_790_000_000))).ok).toBe(true);
+    expect(c.store.list()).toHaveLength(1);
   });
 });

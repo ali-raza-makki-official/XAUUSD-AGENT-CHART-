@@ -58,12 +58,20 @@ export interface RemoteActionContext {
 }
 
 /** An action the AI (or a slash command) wants to perform. Executed only after `CONFIRM <code>`. */
-export const ProposedActionSchema = z.object({
+const ActionCore = z.object({
   kind: z.string().min(1).max(60),
   payload: z.record(z.string(), z.unknown()),
   /** The exact text the user sees. The code is bound to it. */
   preview: z.string().min(1).max(2000),
   level: z.enum(['chart', 'trade']),
+});
+/** Extra numbered choices next to the main one (option 1). The last number is always Cancel. */
+export const ActionChoiceSchema = ActionCore.extend({ label: z.string().min(1).max(60) });
+export type ActionChoice = z.infer<typeof ActionChoiceSchema>;
+export const ProposedActionSchema = ActionCore.extend({
+  /** Label of option 1 (default "Confirm"). */
+  label: z.string().min(1).max(60).optional(),
+  alternatives: z.array(ActionChoiceSchema).max(4).optional(),
 });
 export type ProposedAction = z.infer<typeof ProposedActionSchema>;
 export interface ActionOutcome {
@@ -233,8 +241,8 @@ const IDENTITY_REPLY_COOLDOWN_MS = 60 * 60_000;
 
 const CONFIRM_RE = /^confirm\s+(\d{4,8})$/i;
 const CODE_RE = /^(?:code\s*:?\s*)?(\d{6})$/i;
-const YES_RE = /^(1|y|yes|ok|okay|confirm|confirmed|sure|do it|go|go ahead|haan|han|ji|theek hai)[.!]?$/i;
-const NO_RE = /^(2|n|no|nahi|nahin|na)[.!]?$/i;
+const YES_RE = /^(y|yes|ok|okay|confirm|confirmed|sure|do it|go|go ahead|haan|han|ji|theek hai)[.!]?$/i;
+const NO_RE = /^(n|no|nahi|nahin|na)[.!]?$/i;
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const maskCodes = (s: string) => s.replace(/(confirm\s+)\d{4,8}/gi, '$1****').replace(/\b\d{6}\b/g, '******');
@@ -434,12 +442,21 @@ export class WhatsAppPipeline {
     }
     if (/^\/?cancel$/i.test(text)) return this.handleCancel(m, commandId, done);
     const waiting = this.d.store.getPending();
-    if (waiting && !viaVoice && YES_RE.test(text)) return this.handleConfirm(m, waiting.code, commandId, done);
-    if (waiting && NO_RE.test(text)) return this.handleCancel(m, commandId, done);
-    if (waiting && viaVoice && YES_RE.test(text)) {
-      await this.reply(m.from, 'A spoken "yes" cannot confirm. Type 1 to confirm or 2 to cancel.', 'confirm', { replyTo: m.id, commandId });
-      return done('rejected_code', 'voice cannot confirm');
+    const pick = waiting && /^[1-9]$/.test(text) ? Number(text) : YES_RE.test(text) ? 1 : 0;
+    if (waiting && pick) {
+      if (viaVoice) {
+        await this.reply(m.from, 'A spoken answer cannot confirm. Type the option number.', 'confirm', { replyTo: m.id, commandId });
+        return done('rejected_code', 'voice cannot confirm');
+      }
+      const alts = waiting.action.alternatives ?? [];
+      if (pick === alts.length + 2) return this.handleCancel(m, commandId, done);
+      if (pick > alts.length + 2) {
+        await this.reply(m.from, `Please reply with a number from 1 to ${alts.length + 2}.`, 'confirm', { replyTo: m.id, commandId });
+        return done('rejected_code', 'option out of range');
+      }
+      return this.handleConfirm(m, waiting.code, commandId, done, pick);
     }
+    if (waiting && NO_RE.test(text)) return this.handleCancel(m, commandId, done);
     if (text.startsWith('/')) return this.handleSlash(m, text, commandId, done);
     return this.handleAi(m, text, attachments, viaVoice, commandId, done);
   }
@@ -579,17 +596,21 @@ export class WhatsAppPipeline {
       await this.run(m, action, actionCommandId, 'executed-without-code');
       return done('executed', 'chart action, code not required by settings');
     }
+    action = { ...action, alternatives: (action.alternatives ?? []).filter((a) => WA_LEVEL_RANK[s.permission] >= WA_LEVEL_RANK[a.level]) };
+    const alts = action.alternatives ?? [];
+    if (!alts.length) delete action.alternatives;
+    const optionLines = [`1 - ${action.label ?? 'Confirm'}`, ...alts.map((a, i) => `${i + 2} - ${a.label}`), `${alts.length + 2} - Cancel`].join('\n');
     const code = this.d.randomDigits(4);
     const createdAt = this.now();
     const base = { commandId: actionCommandId, code, action, userKey: m.from };
     this.d.store.savePending({ id: actionCommandId, ...base, binding: confirmationBinding(base), createdAt, expiresAt: createdAt + s.confirmTtlSec * 1000, attempts: 0, status: 'pending' });
     const mins = s.confirmTtlSec >= 120 && s.confirmTtlSec % 60 === 0 ? `${s.confirmTtlSec / 60} minutes` : `${s.confirmTtlSec} seconds`;
-    await this.reply(m.from, `${action.preview}\n\nNothing has been done yet.\n\n1 - Confirm\n2 - Cancel\n\nReply 1 or 2. Valid for ${mins}, one use.`, 'confirm', { replyTo: m.id, commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
+    await this.reply(m.from, `${action.preview}\n\nNothing has been done yet.\n\n${optionLines}\n\nReply with a number. Valid for ${mins}, one use.`, 'confirm', { replyTo: m.id, commandId: actionCommandId, tradeRelated: action.level === 'trade', priority: 'critical' });
     this.hist({ direction: 'system', kind: 'confirm', commandId: actionCommandId, messageId: m.id, summary: clip(`Confirmation required: ${action.preview}`, 160), status: 'confirm_required' });
     done('confirm_required', 'waiting for code');
   }
 
-  private async handleConfirm(m: InboundMessage, code: string, commandId: string, done: (s: WaHistoryStatus, d?: string) => void): Promise<void> {
+  private async handleConfirm(m: InboundMessage, code: string, commandId: string, done: (s: WaHistoryStatus, d?: string) => void, option = 1): Promise<void> {
     const store = this.d.store;
     const p = store.getPending();
     const refuse = async (text: string, detail: string) => { await this.reply(m.from, text, 'confirm', { replyTo: m.id, commandId, priority: 'critical' }); done('rejected_code', detail); };
@@ -614,7 +635,9 @@ export class WhatsAppPipeline {
     }
     if (!store.consumePending(p.id, this.now())) return refuse('That code was already used or has expired. Nothing was done.', 'not consumable');
     this.hist({ direction: 'system', kind: 'confirm', commandId: p.commandId, messageId: m.id, summary: clip(`Confirmed: ${p.action.preview}`, 160), status: 'confirmed' });
-    await this.run(m, p.action, p.commandId, 'confirmed');
+    const alt = option > 1 ? p.action.alternatives?.[option - 2] : undefined;
+    const chosen: ProposedAction = alt ? { kind: alt.kind, payload: alt.payload, preview: alt.preview, level: alt.level } : p.action;
+    await this.run(m, chosen, alt ? `${p.commandId}-o${option}` : p.commandId, 'confirmed');
     done('confirmed');
   }
 

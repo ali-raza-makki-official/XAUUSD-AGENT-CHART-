@@ -207,7 +207,13 @@ export class WhatsAppService {
       if (!res) return { text: NO_WINDOW };
       if (!res.ok) throw new Error(res.error ?? 'The AI request failed.');
       const out: RemoteAiResult = { text: res.text };
-      if (res.proposed && res.proposed.calls.length && level === 'chart') {
+      if (res.options && res.options.length >= 2 && level === 'chart') {
+        const [first, ...rest] = res.options;
+        out.proposedAction = {
+          kind: 'ai_tools', payload: { calls: first!.calls }, preview: first!.preview.slice(0, 1900), level: 'chart', label: first!.label,
+          alternatives: rest.map((o) => ({ kind: 'ai_tools', payload: { calls: o.calls }, preview: o.preview.slice(0, 1900), level: 'chart' as const, label: o.label })),
+        };
+      } else if (res.proposed && res.proposed.calls.length && level === 'chart') {
         out.proposedAction = { kind: 'ai_tools', payload: { calls: res.proposed.calls }, preview: res.proposed.preview.slice(0, 1900), level: 'chart' };
       }
       return out;

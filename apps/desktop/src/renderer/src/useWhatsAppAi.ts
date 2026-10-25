@@ -9,7 +9,29 @@ const CHART_CHANGING = new Set([
   'add_indicator', 'update_indicator', 'remove_indicator', 'set_layout', 'set_timeframe', 'undo_action',
 ]);
 const MAX_HISTORY = 24;
-const SUFFIX = '\n\n[channel: WhatsApp. Answer in short plain text, no markdown tables. Anything that changes the chart will be held for the user to confirm with a code.]';
+const SUFFIX = '\n\n[channel: WhatsApp. Answer in short plain text, no markdown tables. Anything that changes the chart is held until the user replies with an option number. When there are several sensible variants, call offer_options.]';
+
+const OFFER_OPTIONS_TOOL = {
+  name: 'offer_options',
+  description: 'Offer the user 2-4 numbered choices on WhatsApp when there are several sensible ways to change the chart (e.g. conservative vs aggressive zone). Nothing is applied until the user replies with a number. Each option is a short label plus the chart-changing tool calls it would run. Do not use it for a single proposal; just call the tool normally.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      options: {
+        type: 'array', minItems: 2, maxItems: 4,
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: 'Max 40 characters, e.g. "Zone 2650-2655".' },
+            calls: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'object', properties: { name: { type: 'string' }, input: { type: 'object' } }, required: ['name', 'input'] } },
+          },
+          required: ['label', 'calls'],
+        },
+      },
+    },
+    required: ['options'],
+  },
+};
 
 type Analysis = {
   noSetup?: boolean; marketStructure?: { state: string; summary: string }; levels?: { price: number; kind: string; reason: string }[];
@@ -67,9 +89,18 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         const history: ChatMessage[] = [...prev, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${req.text}${SUFFIX}` }] }];
         const held: WaProposedCall[] = [];
         let card: Analysis | null = null;
+        let offered: { label: string; calls: WaProposedCall[] }[] = [];
         const r = await runTurn(st, history, p, {
           channel: 'whatsapp',
+          ...(req.level === 'chart' ? { extraTools: [OFFER_OPTIONS_TOOL] } : {}),
           intercept: (name, input) => {
+            if (name === 'offer_options') {
+              const raw = (input as { options?: { label?: unknown; calls?: { name?: unknown; input?: unknown }[] }[] }).options;
+              const ok = Array.isArray(raw) && raw.length >= 2 && raw.length <= 4 && raw.every((o) => typeof o.label === 'string' && Array.isArray(o.calls) && o.calls.length > 0 && o.calls.length <= 5 && o.calls.every((c) => typeof c.name === 'string' && CHART_CHANGING.has(c.name)));
+              if (!ok || req.level !== 'chart') return { ok: false, content: JSON.stringify({ ok: false, error: { code: 'invalid_input', message: 'Give 2-4 options, each with a label and 1-5 chart-changing calls.' } }) };
+              offered = raw.map((o) => ({ label: String(o.label).slice(0, 40), calls: o.calls!.map((c) => ({ name: String(c.name), input: c.input })) }));
+              return { ok: true, content: JSON.stringify({ ok: true, data: { held: true, note: 'Options NOT applied. The app shows them as numbered choices; write one short line introducing them.' } }) };
+            }
             if (name === 'submit_analysis') card = input as Analysis;
             if (!CHART_CHANGING.has(name) || req.level !== 'chart') return null;
             held.push({ name, input });
@@ -84,7 +115,8 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         const text = parts.join('\n\n') || (r.ended === 'max_steps' ? 'The AI used all its steps without finishing. Ask again, more narrowly.' : 'No answer.');
         respond({
           id: req.id, ok: true, text,
-          ...(held.length ? { proposed: { calls: held, preview: `Proposed chart changes:\n${held.map((h) => `- ${h.name} ${JSON.stringify(h.input).slice(0, 200)}`).join('\n')}` } } : {}),
+          ...(offered.length ? { options: offered.map((o) => ({ ...o, preview: `${o.label}:\n${o.calls.map((h) => `- ${h.name} ${JSON.stringify(h.input).slice(0, 160)}`).join('\n')}` })) } : {}),
+          ...(held.length && !offered.length ? { proposed: { calls: held, preview: `Proposed chart changes:\n${held.map((h) => `- ${h.name} ${JSON.stringify(h.input).slice(0, 200)}`).join('\n')}` } } : {}),
         });
       } catch (e) {
         respond({ id: req.id, ok: false, text: '', error: e instanceof Error ? e.message : String(e) });

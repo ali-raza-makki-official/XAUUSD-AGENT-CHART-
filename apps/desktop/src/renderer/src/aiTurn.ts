@@ -47,6 +47,8 @@ export function contextLine(c: ChatDeps): string {
 }
 
 export interface TurnOpts {
+  /** Extra tool definitions (name, description, JSON schema) that only `intercept` handles. */
+  extraTools?: { name: string; description: string; inputSchema: Record<string, unknown> }[];
   channel?: 'app' | 'whatsapp';
   signal?: AbortSignal;
   /** Request id of each provider call (so a running call can be aborted). */
@@ -80,7 +82,7 @@ export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermiss
   const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders, ...(o.channel ? { channel: o.channel } : {}) });
   const api = st().api!;
   return runAgent(history, {
-    system, tools: toolCatalog(p), ...(o.signal ? { signal: o.signal } : {}),
+    system, tools: [...toolCatalog(p), ...(o.extraTools ?? [])], ...(o.signal ? { signal: o.signal } : {}),
     llm: (req) => { const id = crypto.randomUUID(); o.onRequest?.(id); return api.aiChat(id, req); },
     exec: async (name, input) => {
       const held = o.intercept?.(name, input);

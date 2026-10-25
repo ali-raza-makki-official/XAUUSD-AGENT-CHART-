@@ -84,6 +84,29 @@ describe.each([['memory', () => new MemoryWhatsAppStore()], ['sqlite', () => new
     expect(JSON.stringify(r.store.listHistory(50))).not.toMatch(/CONFIRM 4821/);
   });
 
+  it('numbered choices: option 3 runs that alternative once, last number cancels, out of range is refused', async () => {
+    const multi: RemoteAiHandler = { handle: async () => ({ text: 'Two zones.', proposedAction: {
+      kind: 'ai_tools', payload: { v: 'a' }, preview: 'Zone A', level: 'chart', label: 'Zone A',
+      alternatives: [{ kind: 'ai_tools', payload: { v: 'b' }, preview: 'Zone B', level: 'chart', label: 'Zone B' }, { kind: 'close_position', payload: {}, preview: 'Close', level: 'trade', label: 'Close trade' }],
+    } }) };
+    const r = rig({ store: mk(), ai: multi, settings: { permission: 'chart' } });
+    await r.p.handleBatch([msg('m1', 'ideas')]);
+    const prompt = r.texts().at(-1)!;
+    expect(prompt).toMatch(/1 - Zone A\n2 - Zone B\n3 - Cancel/); // trade alternative hidden at chart level
+    await r.p.handleBatch([msg('m2', '9')]);
+    expect(r.texts().at(-1)).toMatch(/number from 1 to 3/);
+    expect(r.executed).toEqual([]);
+    await r.p.handleBatch([msg('m3', '2')]);
+    expect(r.executed).toHaveLength(1);
+    expect(r.executed[0]).toMatch(/^ai_tools:wa-[0-9a-f]{24}-act-o2$/);
+    await r.p.handleBatch([msg('m4', '2')]);
+    expect(r.executed).toHaveLength(1); // single use
+    await r.p.handleBatch([msg('m5', 'ideas')]);
+    await r.p.handleBatch([msg('m6', '3')]);
+    expect(r.texts().at(-1)).toMatch(/Cancelled/);
+    expect(r.executed).toHaveLength(1);
+  });
+
   it('confirmation: reused code, wrong code, "yes", expired code and voice-less cases are refused', async () => {
     const r = rig({ store: mk() });
     await r.p.handleBatch([msg('b1', 'close it')]);

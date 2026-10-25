@@ -33,3 +33,10 @@ The poller lives in the desktop app. If the PC or app is off, nothing answers. T
 
 ## Not done yet (see report)
 Electron service/IPC wiring (`whatsappService.ts`, `shared.ts`/preload/main index hunks), `components/WhatsAppSettings.tsx`, the history view component, real-Electron screenshot verification, `/status` and `/price` real handlers (lead wires `RemoteActionHandler`).
+
+## Confirming on WhatsApp ("buttons")
+The WhatsApp agent API has no interactive button messages (only text, image, audio, video, document, sticker), so options are numbered replies:
+- Every proposed action ends with `1 - Confirm` ... `N - Cancel`. The AI can offer 2-4 variants (`offer_options`); they appear as `1 - <label>`, `2 - <label>`, ... and the last number is always Cancel.
+- Only one proposal is pending at a time; it lasts `confirmTtlSec` (default 2 minutes), works once, only from the linked chat, and never by voice. Trade-level options are hidden unless the permission level is "trade actions".
+- `yes` also selects option 1, `no` cancels. The old `CONFIRM <code>` still works.
+- Replies are reformatted for phones (`whatsappFormat.ts`); the AI is told to answer in short lines.

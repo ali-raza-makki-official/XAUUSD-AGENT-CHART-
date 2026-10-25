@@ -62,6 +62,8 @@ export interface WaAiResponse {
   error?: string;
   /** Chart-changing tool calls the AI wanted; held back and only run after a CONFIRM code. */
   proposed?: { calls: WaProposedCall[]; preview: string };
+  /** Numbered choices the AI offered (each is a set of chart-changing calls). Option 1 is the first entry. */
+  options?: { label: string; calls: WaProposedCall[]; preview: string }[];
 }
 /** Confirmed chart actions, main -> renderer (same channel, different shape). */
 export interface WaExecRequest { id: string; exec: true; calls: WaProposedCall[] }

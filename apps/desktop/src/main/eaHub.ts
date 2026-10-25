@@ -13,6 +13,9 @@ const MAX_FRAME = 16 * 1024 * 1024;
 class WsConn {
   private buf = Buffer.alloc(0);
   private frag: Buffer[] = [];
+  private fragBytes = 0;
+  /** Largest message accepted. Small until the peer has authenticated. */
+  limit = 64 * 1024;
   constructor(private readonly socket: Duplex, private readonly onText: (s: string) => void, private readonly onClose: () => void) {
     socket.on('data', (d: Buffer) => { this.buf = Buffer.concat([this.buf, d]); this.parse(); });
     socket.on('close', onClose);
@@ -26,7 +29,7 @@ class WsConn {
       let len = b[1]! & 0x7f, pos = 2;
       if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); pos = 4; }
       else if (len === 127) { if (b.length < 10) return; len = Number(b.readBigUInt64BE(2)); pos = 10; }
-      if (len > MAX_FRAME) { this.socket.destroy(); return; }
+      if (len > this.limit || this.fragBytes + len > this.limit) { this.socket.destroy(); return; }
       if (masked) pos += 4;
       if (b.length < pos + len) return;
       const payload = Buffer.from(b.subarray(pos, pos + len));
@@ -35,8 +38,8 @@ class WsConn {
       if (op === 0x8) { this.socket.end(); return; }
       if (op === 0x9) { this.send(payload, 0xa); continue; }
       if (op === 0x1 || op === 0x0) {
-        this.frag.push(payload);
-        if (fin) { const s = Buffer.concat(this.frag).toString('utf8'); this.frag = []; this.onText(s); }
+        this.frag.push(payload); this.fragBytes += payload.length;
+        if (fin) { const s = Buffer.concat(this.frag).toString('utf8'); this.frag = []; this.fragBytes = 0; this.onText(s); }
       }
     }
   }
@@ -98,6 +101,8 @@ export class EaHub {
     const accept = createHash('sha1').update(key + GUID).digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
     let registered = false;
+    const authTimer = setTimeout(() => { if (!registered) socket.destroy(); }, 5000);
+    socket.once('close', () => clearTimeout(authTimer));
     const ws: WsConn = new WsConn(socket, (text) => {
       let m: any; // eslint-disable-line @typescript-eslint/no-explicit-any
       try { m = JSON.parse(text); } catch { return; }
@@ -106,7 +111,7 @@ export class EaHub {
         const ok = m.action === 'register' && m.protocol === 1 && a.length === b.length && timingSafeEqual(a, b);
         ws.send(JSON.stringify({ action: 'registered', ok, ...(ok ? {} : { error: 'bad token or protocol' }) }));
         if (!ok) { setTimeout(() => ws.close(), 100); return; }
-        registered = true;
+        registered = true; clearTimeout(authTimer); ws.limit = MAX_FRAME;
         this.conn?.close();
         this.conn = ws;
         this.info = m;
@@ -181,17 +186,23 @@ export class EaHub {
         case '/quotes': { need(); const syms = (q.get('symbols') ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 20); if (!syms.length) throw new HttpErr(400, 'No symbols given'); const r = await this.request({ action: 'quotes', symbols: syms }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { quotes: r.list }); }
         case '/positions': need(); return send(200, { positions: this.positions });
         case '/orders': { need(); const r = await this.request({ action: 'orders' }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { orders: r.list ?? [] }); }
-        case '/deals': { need(); const r = await this.request({ action: 'deals', since: Number(q.get('since') ?? 0) || undefined }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { deals: (r.list ?? []).map((d: object) => ({ reason: 'unknown', ...d })) }); }
+        case '/deals': { need(); const r = await this.request({ action: 'deals', since: Number(q.get('since') ?? 0) || undefined }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { truncated: r.truncated === true, deals: (r.list ?? []).map((d: object) => ({ reason: 'unknown', ...d })) }); }
         case '/trade/status': return send(200, { enabled: this.tradingEnabled, provider: 'ea', connected: this.connected });
         case '/trade/find': {
           need();
           const r = await this.request({ action: 'find', command_id: q.get('commandId') });
-          const ticket = r.found ? Number(r.ticket) : null;
-          const pos = ticket ? this.positions.find((p) => p.ticket === ticket) ?? null : null;
+          const reqTicket = Number(q.get('ticket') ?? 0) || null;
+          const ticket = r.found ? Number(r.ticket) : reqTicket;
           const ol = await this.request({ action: 'orders' }).catch(() => null);
+          const dl = await this.request({ action: 'deals', since: Math.floor(Date.now() / 1000) - 172_800 }).catch(() => null);
           const orders: { ticket: number }[] = ol && ol.ok ? (ol.list ?? []) : [];
+          const allDeals: { ticket: number; positionId: number; comment?: string }[] = dl && dl.ok ? (dl.list ?? []).map((d: object) => ({ reason: 'unknown', ...d })) : [];
+          const tagDeals = allDeals.filter((d) => d.comment === r.tag);
+          const pos = ticket ? this.positions.find((p) => p.ticket === ticket) ?? null : null;
           const ord = ticket ? orders.find((o) => o.ticket === ticket) ?? null : null;
-          return send(200, { tag: r.tag, queried: { positions: true, orders: !!(ol && ol.ok), deals: true, historyOrders: false }, positions: pos ? [pos] : [], orders: ord ? [ord] : [], deals: [], historyOrders: [], target: r.found ? { ticket, position: pos, order: ord, deals: [] } : null });
+          const targetDeals = ticket ? allDeals.filter((d) => d.positionId === ticket) : [];
+          // positions come from the live feed, orders and deals from fresh EA queries; order HISTORY is not queried yet, so it is reported as not queried.
+          return send(200, { tag: r.tag, queried: { positions: true, orders: !!(ol && ol.ok), deals: !!(dl && dl.ok), historyOrders: false }, positions: r.found && pos ? [pos] : [], orders: r.found && ord ? [ord] : [], deals: tagDeals, historyOrders: [], target: ticket ? { ticket, position: pos, order: ord, deals: targetDeals } : null });
         }
       }
       if (url.pathname.startsWith('/trade/') && req.method === 'POST') {

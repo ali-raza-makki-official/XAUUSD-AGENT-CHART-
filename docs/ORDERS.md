@@ -58,3 +58,14 @@ pending orders UI, "external change" labels, the daily-limit policy with a real 
 5. Press "Stop AI", try nothing from the AI: orders from the AI are not wired yet. Manual orders must still work.
 6. Close MT5 while a confirm is pending, press Confirm: expect "Not sent" or "Result unknown" and NO second order after reconnecting.
 7. Anything unexpected: stop, keep screenshots and the Feed log text, and report. To roll back: close positions in MT5 and untick Settings > Trading.
+
+## Safety rules added after the technical audit (October 2026)
+- A broker answer that is lost *after* the order reached the EA (timeout, EA disconnect) is **unknown**, never "not sent". Unknown commands block new orders, are re-checked every minute from MT5 evidence, and can be resolved by the owner in the Positions tab after checking MT5.
+- Reading positions or pending orders must succeed completely; a failed read stops the action instead of assuming zero exposure.
+- New orders are blocked when the price has not changed for 60 s. Closing is never blocked by this.
+- Aurum only manages the configured gold symbol. A position on another symbol blocks new risk (its risk cannot be valued) and cannot be modified or closed through Aurum.
+- Widening a stop is checked against the total open-risk maximum, not only the per-trade maximum.
+- If today's deal history is longer than the 500 deals the EA returns, the daily loss is treated as unknown and new risk is blocked.
+- A partial fill is reported as `partial`, not `done`.
+- "Stop AI" is remembered across restarts.
+- Not yet covered: the EA does not query MT5 order *history*, so a vanished pending order stays "inconclusive" until you resolve it; closing deals are not tagged with the command id.

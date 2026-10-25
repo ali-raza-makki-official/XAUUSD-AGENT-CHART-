@@ -15,7 +15,7 @@ import {
 export type GateRule =
   | 'trading_disabled' | 'account_unknown' | 'live_blocked' | 'symbol_not_allowed' | 'actor_not_permitted' | 'kill_switch'
   | 'ai_suggest_only' | 'ai_automatic_disabled' | 'ai_permission_missing' | 'bulk_close_permission' | 'not_confirmed' | 'command_expired'
-  | 'unresolved_command' | 'no_quote' | 'no_spec' | 'volume_invalid' | 'missing_sl' | 'sl_wrong_side' | 'tp_wrong_side' | 'max_spread' | 'max_slippage'
+  | 'unresolved_command' | 'no_quote' | 'stale_quote' | 'no_spec' | 'volume_invalid' | 'missing_sl' | 'sl_wrong_side' | 'tp_wrong_side' | 'max_spread' | 'max_slippage'
   | 'max_positions' | 'per_trade_risk' | 'open_risk' | 'daily_limit_unknown' | 'daily_limit_hit' | 'daily_limit_would_exceed' | 'daily_limit_frozen'
   | 'assistant_off' | 'plan_not_approved' | 'rule_not_allowed' | 'rule_widens_risk'
   | 'sl_widen_after_limit' | 'sl_widen_exceeds_trade_risk' | 'position_not_found' | 'order_not_found' | 'partial_volume_invalid' | 'nothing_to_close';
@@ -41,7 +41,8 @@ export interface GateInput {
   killSwitch: boolean;
   account: { demo: boolean; balance: number; equity?: number; currency: string } | null;
   spec: (ContractSpec & { point?: number }) | null;
-  tick: { bid: number; ask: number } | null;
+  /** ageMs = how long ago the price last changed (local clock). Absent = freshness unknown, which only tests do. */
+  tick: { bid: number; ask: number; ageMs?: number } | null;
   positions: BrokerPosition[];
   orders: BrokerOrder[];
   /** Realised result since the daily reset (profit + commission + swap + fees), negative = loss. null = unknown. */
@@ -73,6 +74,8 @@ export interface GateResult {
   numbers: GateNumbers;
 }
 
+/** A price that has not changed for this long is not trusted for opening trades. */
+export const MAX_QUOTE_AGE_MS = 60_000;
 const EPS = 1e-9;
 const GOLD = /(XAU|GOLD)/i;
 const fmt = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : 'unlimited');
@@ -208,6 +211,7 @@ export function evaluateGate(inp: GateInput): GateResult {
         entry = side === 'buy' ? inp.tick.ask : inp.tick.bid;
         const spread = inp.tick.ask - inp.tick.bid;
         numbers.spread = spread;
+        if (inp.tick.ageMs !== undefined && inp.tick.ageMs > MAX_QUOTE_AGE_MS) fail('stale_quote', `The last price is ${Math.round(inp.tick.ageMs / 1000)} s old (market closed or the feed is frozen). New orders are blocked until prices move again.`);
         if (spread > risk.maxSpread + EPS) fail('max_spread', `Spread ${spread.toFixed(2)} is above your maximum ${risk.maxSpread.toFixed(2)}.`);
       }
       if (spec) {
@@ -215,7 +219,10 @@ export function evaluateGate(inp: GateInput): GateResult {
         const dev = o.deviationPoints * point;
         if (dev > risk.maxSlippage + EPS) fail('max_slippage', `Allowed slippage ${dev.toFixed(2)} is above your maximum ${risk.maxSlippage.toFixed(2)}.`);
       }
-    } else entry = o.price;
+    } else {
+      entry = o.price;
+      if (inp.tick?.ageMs !== undefined && inp.tick.ageMs > MAX_QUOTE_AGE_MS) fail('stale_quote', 'The price feed is frozen (no price change for over a minute). New orders are blocked until prices move again.');
+    }
     if (entry !== null) {
       const ref = entry;
       if (o.sl !== null && (side === 'buy' ? !(o.sl < ref) : !(o.sl > ref))) fail('sl_wrong_side', `For a ${side} the stop loss must be ${side === 'buy' ? 'below' : 'above'} the entry ${ref.toFixed(2)}.`);
@@ -230,6 +237,8 @@ export function evaluateGate(inp: GateInput): GateResult {
       // total open risk including this order
       let existing = 0;
       let unbounded: string | null = null;
+      const foreign = [...inp.positions.map((p) => ({ k: `position #${p.ticket}`, s: p.symbol })), ...inp.orders.map((x) => ({ k: `pending order #${x.ticket}`, s: x.symbol }))].find((x) => x.s && !isAllowedSymbol(x.s, s.allowedSymbols));
+      if (foreign) fail('open_risk', `${foreign.k} is on ${foreign.s}, whose risk Aurum cannot value (only ${s.allowedSymbols.join(', ')} is configured). New risk is blocked until it is closed.`);
       for (const p of inp.positions) {
         const r = riskAtSl(spec, p.type, p.priceOpen, p.sl, p.volume);
         if (!Number.isFinite(r)) unbounded = unbounded ?? `position #${p.ticket}`; else existing += r;
@@ -260,6 +269,7 @@ export function evaluateGate(inp: GateInput): GateResult {
   if (c.type === 'close_position' || c.type === 'partial_close') {
     const p = inp.positions.find((x) => x.ticket === c.ticket);
     if (!p) fail('position_not_found', `Position #${c.ticket} was not found (already closed?).`);
+    else if (p.symbol && !isAllowedSymbol(p.symbol, s.allowedSymbols)) fail('symbol_not_allowed', `Position #${c.ticket} is on ${p.symbol}, not the configured gold symbol. Aurum only manages gold.`);
     else if (c.type === 'partial_close') {
       if (!spec) fail('no_spec', 'The broker contract specification is not available yet.');
       else {
@@ -272,7 +282,9 @@ export function evaluateGate(inp: GateInput): GateResult {
 
   // cancel_pending
   const cancel = c as { ticket: number };
-  if (!inp.orders.some((x) => x.ticket === cancel.ticket)) fail("order_not_found", `Pending order #${cancel.ticket} was not found.`);
+  const cord = inp.orders.find((x) => x.ticket === cancel.ticket);
+  if (!cord) fail("order_not_found", `Pending order #${cancel.ticket} was not found.`);
+  else if (cord.symbol && !isAllowedSymbol(cord.symbol, s.allowedSymbols)) fail('symbol_not_allowed', `Pending order #${cancel.ticket} is on ${cord.symbol}, not the configured gold symbol.`);
   return done();
 }
 
@@ -290,11 +302,13 @@ function modifyRules(
   if (c.ticketKind === 'position') {
     const p = inp.positions.find((x) => x.ticket === c.ticket);
     if (!p) { fail('position_not_found', `Position #${c.ticket} was not found (already closed?).`); return done(); }
+    if (p.symbol && !isAllowedSymbol(p.symbol, inp.settings.allowedSymbols)) { fail('symbol_not_allowed', `Position #${c.ticket} is on ${p.symbol}, not the configured gold symbol.`); return done(); }
     side = p.type; open = p.priceOpen; volume = p.volume; oldSl = p.sl;
     ref = inp.tick ? (side === 'buy' ? inp.tick.bid : inp.tick.ask) : null;
   } else {
     const o = inp.orders.find((x) => x.ticket === c.ticket);
     if (!o) { fail('order_not_found', `Pending order #${c.ticket} was not found.`); return done(); }
+    if (o.symbol && !isAllowedSymbol(o.symbol, inp.settings.allowedSymbols)) { fail('symbol_not_allowed', `Pending order #${c.ticket} is on ${o.symbol}, not the configured gold symbol.`); return done(); }
     side = o.type.startsWith('buy') ? 'buy' : 'sell'; open = o.priceOpen; volume = o.volume; oldSl = o.sl; ref = o.priceOpen;
   }
   const newSl = c.sl === undefined ? oldSl : c.sl;
@@ -314,6 +328,15 @@ function modifyRules(
       fail('sl_widen_after_limit', 'The daily loss limit is reached: moving the stop further away (more risk) is blocked. Moving it toward safety is allowed.');
     } else if (widens && Number.isFinite(after) && numbers.riskPct !== null && numbers.riskPct > risk.maxRiskPerTradePct + 1e-9) {
       fail('sl_widen_exceeds_trade_risk', `The new stop risks ${numbers.riskPct.toFixed(2)}% of balance, above your per-trade maximum ${risk.maxRiskPerTradePct}%.`);
+    }
+    if (widens && Number.isFinite(after) && inp.account.balance > 0) {
+      // the new stop must also fit the TOTAL open-risk budget, not only the per-trade one
+      let others = 0;
+      for (const p of inp.positions) if (!(c.ticketKind === 'position' && p.ticket === c.ticket)) { const r = riskAtSl(spec, p.type, p.priceOpen, p.sl, p.volume); if (Number.isFinite(r)) others += r; }
+      for (const od of inp.orders) if (!(c.ticketKind === 'order' && od.ticket === c.ticket)) { const r = riskAtSl(spec, od.type.startsWith('buy') ? 'buy' : 'sell', od.priceOpen, od.sl, od.volume); if (Number.isFinite(r)) others += r; }
+      const totalPct = ((others + after) / inp.account.balance) * 100;
+      numbers.openRiskMoney = others + after; numbers.openRiskPct = totalPct;
+      if (totalPct > risk.maxOpenRiskPct + 1e-9) fail('open_risk', `The new stop would raise total open risk to ${totalPct.toFixed(2)}%, above your maximum ${risk.maxOpenRiskPct}%.`);
     }
     if (limitHit === null && widens) fail('daily_limit_unknown', 'Today\'s loss is unknown, so a stop that increases risk is blocked.');
   } else if (c.sl !== undefined && limitHit && risk.dailyLimitPolicy === 'freeze') {

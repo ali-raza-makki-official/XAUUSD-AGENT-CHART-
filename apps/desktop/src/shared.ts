@@ -58,6 +58,10 @@ export interface AurumApi extends WhatsAppApi {
   ordersPrepare(command: unknown): Promise<PrepareResult>;
   ordersConfirm(commandId: string): Promise<OrderRecord>;
   ordersReconcile(commandId: string): Promise<OrderRecord>;
+  /** Commands whose result is unknown (the broker may or may not have executed them). */
+  ordersUnresolved(): Promise<OrderRecord[]>;
+  /** The owner checked MT5 by hand and decides what happened. Logged. */
+  ordersResolve(commandId: string, outcome: 'confirmed' | 'rejected', note: string): Promise<OrderRecord>;
   ordersKill(on: boolean): Promise<void>;
   /** Real closed deals from MT5 for the last N days (for the journal and performance statistics). */
   /** Remember the pre-trade checklist the user saw when confirming an order. */
@@ -146,7 +150,7 @@ export const IPC = {
   ordersState: 'orders:state',
   ordersPrepare: 'orders:prepare',
   ordersConfirm: 'orders:confirm',
-  ordersReconcile: 'orders:reconcile',
+  ordersReconcile: 'orders:reconcile', ordersUnresolved: 'orders:unresolved', ordersResolve: 'orders:resolve',
   ordersKill: 'orders:kill',
   ordersHistory: 'orders:history',
   paperList: 'paper:list', paperRecord: 'paper:record', learnInsights: 'learn:insights', learnApply: 'learn:apply', learnRevert: 'learn:revert', configChanged: 'config:changed', tickStats: 'ticks:stats', memoryLog: 'memory:log', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall', memoryNotes: 'memory:notes', memoryForget: 'memory:forget', memoryClear: 'memory:clear', memoryDigest: 'memory:digest', memoryStats: 'memory:stats', paperChanged: 'paper:changed',

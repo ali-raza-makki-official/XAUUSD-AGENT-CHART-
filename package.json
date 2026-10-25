@@ -14,6 +14,6 @@
     "dist:win": "npm run dist:win -w @aurum/desktop"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   }
 }

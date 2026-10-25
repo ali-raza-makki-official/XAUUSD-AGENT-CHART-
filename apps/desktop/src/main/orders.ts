@@ -6,30 +6,37 @@ import type { BridgeManager } from './bridge';
 const WORKSPACE = 'default';
 
 /** BrokerPort over the local MT5 bridge. A non-200 means order_send was NOT called; any thrown error on execute means "unknown". */
-function bridgePort(bridge: BridgeManager): BrokerPort {
+export function bridgePort(bridge: BridgeManager): BrokerPort & { deals(since: number, strict?: boolean): Promise<BrokerDeal[]> } {
   return {
     async snapshot() {
       const [acc, spec, pos, ord] = await Promise.all([
         bridge.http('GET', '/account'), bridge.http('GET', '/symbol'), bridge.http('GET', '/positions'), bridge.http('GET', '/orders'),
       ]);
       if (acc.status !== 200) throw new Error(acc.json?.error ?? 'MT5 account unavailable');
+      // Unknown exposure is not zero exposure: an unreadable position or order list fails the whole snapshot.
+      if (pos.status !== 200) throw new Error(pos.json?.error ?? 'MT5 positions unavailable');
+      if (ord.status !== 200) throw new Error(ord.json?.error ?? 'MT5 pending orders unavailable');
       const a = acc.json;
       const tick = bridge.lastTick;
       return {
         account: { demo: !!a.demo, balance: Number(a.balance ?? 0), equity: a.equity, currency: String(a.currency), login: a.login, server: a.server },
-        tick: tick ? { bid: tick.bid, ask: tick.ask, time: tick.time } : null,
+        tick: tick ? { bid: tick.bid, ask: tick.ask, time: tick.time, ageMs: bridge.status.state === 'connected' || bridge.status.state === 'stale' ? bridge.tickAgeMs() : Number.MAX_SAFE_INTEGER } : null,
         spec: spec.status === 200 ? SymbolSpecSchema.parse(spec.json) : null,
-        positions: pos.status === 200 ? z.array(BrokerPositionSchema).parse(pos.json.positions) : [],
-        orders: ord.status === 200 ? z.array(BrokerOrderSchema).parse(ord.json.orders) : [],
+        positions: z.array(BrokerPositionSchema).parse(pos.json.positions),
+        orders: z.array(BrokerOrderSchema).parse(ord.json.orders),
       };
     },
-    async deals(since) {
+    async deals(since, strict = true) {
       const r = await bridge.http('GET', `/deals?since=${encodeURIComponent(String(since))}`);
       if (r.status !== 200) throw new Error(r.json?.error ?? 'MT5 deal history unavailable');
+      // The EA returns at most the newest 500 deals. For the daily loss limit a partial list would understate the loss, so it counts as unknown.
+      if (strict && r.json.truncated === true) throw new Error('Today\'s deal history is longer than the 500 deals MT5 returns at once, so the daily loss cannot be computed exactly.');
       return z.array(BrokerDealSchema).parse(r.json.deals);
     },
     async execute(action, body) {
       const r = await bridge.http('POST', `/trade/${action}`, body, 45_000);
+      // 504/'unknown' means the EA forwarded the order and then lost the answer: it MAY have been executed. That is never "not sent".
+      if (r.status === 504 || r.json?.code === 'unknown') throw new Error(String(r.json?.error ?? 'No answer from the EA after sending the order.'));
       if (r.status !== 200) throw new BrokerNotSent(String(r.json?.error ?? `Bridge refused (HTTP ${r.status})`), String(r.json?.code ?? 'bridge'));
       return BrokerOutcomeSchema.parse(r.json);
     },
@@ -71,8 +78,13 @@ export class OrderService {
   }
 
   private loadRecords(): OrderRecord[] {
-    const rows = this.db().prepare('SELECT json FROM order_records WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 500').all(WORKSPACE) as { json: string }[];
-    return rows.flatMap((r) => { try { return [JSON.parse(r.json) as OrderRecord]; } catch { return []; } });
+    const recent = this.db().prepare('SELECT json FROM order_records WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 500').all(WORKSPACE) as { json: string }[];
+    // An unresolved command must never fall out of memory behind newer activity.
+    const open = this.db().prepare("SELECT json FROM order_records WHERE workspace_id = ? AND json LIKE '%\"state\":\"unknown_reconcile\"%'").all(WORKSPACE) as { json: string }[];
+    const seen = new Set<string>();
+    return [...recent, ...open].flatMap((r) => {
+      try { const rec = JSON.parse(r.json) as OrderRecord; if (seen.has(rec.commandId)) return []; seen.add(rec.commandId); return [rec]; } catch { return []; }
+    });
   }
   private saveRecord(r: OrderRecord): void {
     this.db().prepare('INSERT INTO order_records (command_id, workspace_id, json, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(command_id, workspace_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at')
@@ -109,7 +121,7 @@ export class OrderService {
   /** Closed-deal history from MT5 (the EA returns at most the newest 500 deals). */
   async history(days: number): Promise<BrokerDeal[]> {
     const since = Math.floor(Date.now() / 1000) - Math.max(1, Math.min(365, Math.round(days))) * 86400;
-    return bridgePort(this.bridge).deals(since);
+    return bridgePort(this.bridge).deals(since, false);
   }
 
   async state(): Promise<OrdersState> {

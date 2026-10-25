@@ -4,11 +4,10 @@
 //|  Aurum is the WebSocket SERVER (loopback); this EA connects out. |
 //|  Protocol: see docs/MQL5_BRIDGE.md. JSON text frames.            |
 //|                                                                  |
-//|  STATUS: written to match the Aurum Python bridge, NOT compiled  |
-//|  or run anywhere yet (no MetaEditor in the build sandbox).       |
+//|  STATUS: this EA is Aurum's only MT5 bridge. It has NOT been     |
+//|  compiled in this repository's build environment (no MetaEditor).|
 //|  Compile it, fix any compiler message, and test on a DEMO        |
-//|  account before relying on it. The Python bridge remains the     |
-//|  default and is the tested path.                                 |
+//|  account before relying on it.                                   |
 //|                                                                  |
 //|  SETUP (once per terminal)                                       |
 //|   1. Copy to MQL5/Experts and compile in MetaEditor.             |
@@ -24,7 +23,7 @@
 #include <Trade\Trade.mqh>
 
 #define PROTOCOL_VERSION 1
-#define AURUM_MAGIC      1096041045   // same magic the Python bridge uses
+#define AURUM_MAGIC      1096041045   // Aurum order magic number
 
 input string HubHost         = "127.0.0.1";   // Aurum host (keep loopback)
 input int    HubPort         = 8766;          // Aurum EA hub port (shown in Aurum)
@@ -552,7 +551,7 @@ void DoDeals(const string json)
       list += (n > 0 ? "," : "") + item;
       n++;
      }
-   WsSend("{\"action\":\"deals\",\"req_id\":\"" + Esc(rid) + "\",\"ok\":true,\"list\":[" + list + "]}");
+   WsSend("{\"action\":\"deals\",\"req_id\":\"" + Esc(rid) + "\",\"ok\":true,\"truncated\":" + (from > 0 ? "true" : "false") + ",\"list\":[" + list + "]}");
   }
 
 // Is there any trace of this command (open position, pending order, or a deal in the last 2 days)?
@@ -606,7 +605,7 @@ void Report(const string rid, const bool ok, const ulong positionTicket)
    uint rc = g_trade.ResultRetcode();
    bool success = ok && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL);
    if(success)
-     { Result(rid, rc == TRADE_RETCODE_DONE_PARTIAL ? "done" : "done", g_trade.ResultRetcodeDescription(), positionTicket, g_trade.ResultPrice(), g_trade.ResultVolume(), rc); return; }
+     { Result(rid, rc == TRADE_RETCODE_DONE_PARTIAL ? "partial" : "done", g_trade.ResultRetcodeDescription(), positionTicket, g_trade.ResultPrice(), g_trade.ResultVolume(), rc); return; }
    if(rc == TRADE_RETCODE_TIMEOUT || rc == 0 || rc == TRADE_RETCODE_CONNECTION)
      { Result(rid, "unknown", "No answer from the broker (" + g_trade.ResultRetcodeDescription() + "). Check MT5 before doing anything else.", positionTicket, 0, 0, rc); return; }
    Result(rid, "rejected", "retcode " + IntegerToString((int)rc) + " " + g_trade.ResultRetcodeDescription(), 0, 0, 0, rc);

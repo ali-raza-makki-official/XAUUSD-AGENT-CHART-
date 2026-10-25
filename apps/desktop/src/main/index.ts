@@ -309,7 +309,9 @@ function registerIpc(): void {
   });
   ipcMain.handle(IPC.tickStats, () => tickStore!.stats());
   ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
-  ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
+  ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => { const v = z.boolean().parse(on); orders.engine.setKillSwitch(v); kvSet('kill_switch', JSON.stringify(v)); });
+  ipcMain.handle(IPC.ordersUnresolved, () => orders.engine.registry.unresolved());
+  ipcMain.handle(IPC.ordersResolve, (_e, id: unknown, outcome: unknown, note: unknown) => orders.engine.resolve(z.string().min(8).max(80).parse(id), z.enum(['confirmed', 'rejected']).parse(outcome), z.string().trim().min(3).max(300).parse(note)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
   ipcMain.handle(IPC.reconnect, () => startFeed());
   ipcMain.handle(IPC.eaInfo, async () => { const h = await ensureEaHub(); return { port: h.eaPort, token: h.eaToken, connected: h.connected }; });
@@ -347,6 +349,10 @@ else {
       show: electronNotifier(() => { win?.show(); win?.focus(); }),
     });
     orders = new OrderService(bridge, () => config, getDb);
+    // "Stop AI" survives a restart until the user turns it off.
+    try { if (kvGet('kill_switch') === 'true') orders.engine.setKillSwitch(true); } catch { /* none saved */ }
+    // Recovery: keep re-checking commands whose result was unknown until MT5 evidence settles them.
+    setInterval(() => { if (orders?.engine.registry.unresolved().length) void orders.engine.reconcileAll().catch(() => undefined); }, 60_000).unref();
     alerts.start(); // runs in the main process, so alerts keep working with the window hidden
     registerIpc();
     wa = new WhatsAppService({

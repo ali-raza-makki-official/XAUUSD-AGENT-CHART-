@@ -21,7 +21,7 @@ import { dailyWindowStart, evaluateGate, realizedPnlSince, type GateInput, type 
 
 export interface BrokerSnapshot {
   account: { demo: boolean; balance: number; equity?: number; currency: string; login?: number | null; server?: string } | null;
-  tick: { bid: number; ask: number; time: number } | null;
+  tick: { bid: number; ask: number; time: number; ageMs?: number } | null;
   spec: (ContractSpec & { point?: number; digits?: number }) | null;
   positions: BrokerPosition[];
   orders: BrokerOrder[];
@@ -142,12 +142,15 @@ const near = (a: number | null | undefined, b: number | null | undefined, tol = 
 
 /** Decide from broker evidence what happened to a command whose send result was unknown. Pure. */
 export function judgeEvidence(rec: Pick<OrderRecord, 'command' | 'broker' | 'volumeBefore'>, ev: Evidence): EvidenceVerdict {
-  if (!ev.queried.positions || !ev.queried.orders || !ev.queried.deals || !ev.queried.historyOrders) return { verdict: 'inconclusive', note: 'MT5 could not return all of positions, orders and deal history.' };
+  if (!ev.queried.positions || !ev.queried.orders || !ev.queried.deals) return { verdict: 'inconclusive', note: 'MT5 could not return all of positions, orders and deal history.' };
   const c = rec.command;
+  // A pending order that is gone may have been cancelled or expired (order history); without that history "no trace" cannot be claimed.
+  const needsOrderHistory = c.type === 'open_pending';
   switch (c.type) {
     case 'open_market': case 'open_pending': {
       const hit = ev.positions[0] ?? ev.orders[0] ?? ev.deals.find((d) => d.entry === 'in') ?? ev.historyOrders[0];
       if (hit) return { verdict: 'confirmed', note: 'MT5 holds a position/order/deal tagged with this command.' };
+      if (needsOrderHistory && !ev.queried.historyOrders) return { verdict: 'inconclusive', note: 'The pending order is not open, and MT5 order history was not checked, so it may have been filled-and-closed, expired or cancelled.' };
       return { verdict: 'no_trace', note: 'No position, order, deal or history entry carries this command tag.' };
     }
     case 'close_position': case 'partial_close': {
@@ -270,7 +273,7 @@ export class OrderEngine {
         allowedSymbols: settings.allowedSymbols, allowLive: false,
         ...(settings.assistant ? { assistant: settings.assistant } : {}),
       },
-      killSwitch: this.kill, account: snap.account, spec: snap.spec, tick: snap.tick, positions: snap.positions, orders: snap.orders,
+      killSwitch: this.kill, account: snap.account, spec: snap.spec, tick: snap.tick ? { bid: snap.tick.bid, ask: snap.tick.ask, ...(snap.tick.ageMs !== undefined ? { ageMs: snap.tick.ageMs } : {}) } : null, positions: snap.positions, orders: snap.orders,
       dailyRealizedPnl: pnl,
       unresolved: this.registry.unresolved().map((r) => ({ commandId: r.commandId, type: r.type, ticket: r.ticket })),
     };

@@ -28,7 +28,7 @@ The Windows installer and CI are configured but have never run on Windows (`docs
 
 ## Run on Windows (development)
 1. Install the MT5 terminal from your broker (Exness) and log in to a **demo** account.
-2. Install Node.js 20+, then `npm install` and `npm run dev`.
+2. Install Node.js 22.5 or newer (the app uses the built-in node:sqlite), then `npm install` and `npm run dev`.
 3. In Aurum: Settings > General. It shows the **HubPort** and **AuthToken** (with a Copy button) and the EA setup steps.
 4. In MT5: open MetaEditor, compile `bridge/mql5/AurumBridge.mq5`. Tools > Options > Expert Advisors: tick "Allow algorithmic trading" and add `http://127.0.0.1` to the allowed URLs.
 5. Attach the EA to any chart and paste the HubPort and AuthToken into its inputs. Aurum shows "EA connected".

@@ -24,15 +24,15 @@ Messaging connector for the WhatsApp Agent Platform (developer manual v1, Aug 25
 - Linking: token entered in Settings; first message from the creator makes the app reply with a pairing message; the creator replies with a 6-digit code shown only in the app (5 min, 5 tries).
 - Every message id is recorded once, persisted (survives restart). Messages older than `maxMessageAgeSec` (default 60 s), with unparseable or future timestamps, are never acted on. After downtime one summary is sent ("N messages arrived while Aurum was not running, I did not act on them").
 - Permission levels: notify only, ask AI (default), chart control, trade actions. Trade proposals always need `CONFIRM <code>`; chart proposals do by default (`confirmChartActions`). `/pause` runs immediately (risk-reducing); `/resume` needs a code.
-- Confirmation: 4-digit code, 2 min, single use, 3 wrong tries lock it, one pending at a time, bound by hash to the commandId, the exact action payload and preview, the code and the sender. "yes" or an emoji never confirm. Codes are masked in history. The AI only returns a `proposedAction`; it never sees the code and never executes from WhatsApp itself.
+- Confirmation (legacy form): 4-digit code, single use, 3 wrong tries lock it, bound by hash to the commandId, the exact action payload and preview and the sender. In the current flow you answer with the number shown ("1 - Confirm"), see "Confirming on WhatsApp" below; an emoji or a voice note never confirms. Codes are masked in history. The AI only returns a `proposedAction`; it never sees the code and never executes from WhatsApp itself.
 - The token lives in the OS-encrypted secrets file in the main process, only in the `Authorization` header, scrubbed from surfaced errors.
 - Residual risk: the code travels over the same WhatsApp chat, so anyone holding the unlocked phone can confirm. If PC and phone clocks differ by more than the age limit, live messages look stale; keep the PC clock synced.
 
 ## PC off = no replies
 The poller lives in the desktop app. If the PC or app is off, nothing answers. The platform keeps updates 30 days, so on restart the backlog is read, de-duplicated, and only summarised. Always-on needs a future cloud relay with execution kept on the local agent.
 
-## Not done yet (see report)
-Electron service/IPC wiring (`whatsappService.ts`, `shared.ts`/preload/main index hunks), `components/WhatsAppSettings.tsx`, the history view component, real-Electron screenshot verification, `/status` and `/price` real handlers (lead wires `RemoteActionHandler`).
+## Verified and not verified
+The service, settings screen, history view and pairing flow are wired into the desktop app and were exercised in a real Electron window against a stand-in WhatsApp server. Nothing has been run against the real WhatsApp platform yet.
 
 ## Confirming on WhatsApp ("buttons")
 The WhatsApp agent API has no interactive button messages (only text, image, audio, video, document, sticker), so options are numbered replies:

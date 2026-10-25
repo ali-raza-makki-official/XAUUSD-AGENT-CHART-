@@ -11,11 +11,12 @@ export function PositionsPanel({ api, open, onSettings, bePips = 2, pipSize = 0.
   const [st, setSt] = useState<OrdersState | null>(null);
   const [edit, setEdit] = useState<{ ticket: number; sl: string; tp: string } | null>(null);
   const [pips, setPips] = useState<Map<number, AssistPipRow>>(new Map());
+  const [unres, setUnres] = useState<import('@aurum/core').OrderRecord[]>([]);
   const [pform, setPform] = useState<{ orderType: 'buy_limit' | 'sell_limit' | 'buy_stop' | 'sell_stop'; price: string; sl: string; tp: string; lots: string; hours: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
-    const tick = () => { void api.assistPips().then((rows) => alive && setPips(new Map(rows.map((r) => [r.ticket, r])))).catch(() => undefined); return api.ordersState().then((s) => alive && setSt(s)).catch(() => undefined); };
+    const tick = () => { void api.assistPips().then((rows) => alive && setPips(new Map(rows.map((r) => [r.ticket, r])))).catch(() => undefined); void api.ordersUnresolved().then((u) => alive && setUnres(u)).catch(() => undefined); return api.ordersState().then((s) => alive && setSt(s)).catch(() => undefined); };
     void tick();
     const t = setInterval(tick, 2000);
     return () => { alive = false; clearInterval(t); };
@@ -30,8 +31,18 @@ export function PositionsPanel({ api, open, onSettings, bePips = 2, pipSize = 0.
     open({ type: 'partial_close', ticket, volume: v });
   };
 
+  const resolveIt = (id: string, outcome: 'confirmed' | 'rejected') => void api.ordersResolve(id, outcome, outcome === 'confirmed' ? 'I checked MT5: it was executed.' : 'I checked MT5: it was not executed.').then(() => api.ordersUnresolved().then(setUnres)).catch(() => undefined);
+
   return (
     <div>
+      {unres.map((u) => (
+        <div key={u.commandId} className="banner banner-warn" role="alert">
+          <span>MT5 did not answer for {u.type.replace('_', ' ')}{u.ticket ? ` #${u.ticket}` : ''}, so Aurum does not know if it happened. New orders stay blocked. Aurum re-checks every minute; if you can see the result in MT5, tell Aurum:</span>
+          <Button size="sm" onClick={() => void api.ordersReconcile(u.commandId).then(() => api.ordersUnresolved().then(setUnres))}>Check MT5 now</Button>
+          <Button size="sm" onClick={() => resolveIt(u.commandId, 'confirmed')}>It was executed</Button>
+          <Button size="sm" onClick={() => resolveIt(u.commandId, 'rejected')}>It was NOT executed</Button>
+        </div>
+      ))}
       <div className="row" style={{ marginBottom: 6 }}>
         {st.account ? (st.account.demo ? <Chip tone="ai" icon={ShieldAlert}>DEMO · {st.account.server}</Chip> : <Chip tone="gold">LIVE · {st.account.server}</Chip>) : <Chip>No account</Chip>}
         {st.enabled ? <Chip tone="ok">Trading enabled</Chip> : <Chip tone="warn">Trading off</Chip>}

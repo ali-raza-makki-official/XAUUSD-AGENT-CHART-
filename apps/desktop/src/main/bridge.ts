@@ -74,6 +74,9 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
     this.emit('status', s);
   }
 
+  /** Milliseconds since the price last changed (local clock). Infinity-like when no tick has arrived. */
+  tickAgeMs(): number { return this.lastTickChangeAt ? Date.now() - this.lastTickChangeAt : Number.MAX_SAFE_INTEGER; }
+
   private async pollTick(gen: number): Promise<void> {
     try {
       const tick = TickSchema.parse(await this.get('/tick'));

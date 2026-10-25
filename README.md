@@ -34,6 +34,9 @@ The Windows installer and CI are configured but have never run on Windows (`docs
 The app attaches to the open MT5 terminal. No EA is needed and no MT5 password is stored.
 Candle times follow the broker server clock, like the MT5 chart.
 
+## Windows self-check
+Run `powershell -ExecutionPolicy Bypass -File scripts\windows-smoke.ps1` from the repo folder. It changes nothing and prints PASS/FAIL/WARN for Node, the exact Python Aurum will use (64-bit, MetaTrader5 package), installed MT5 terminals, whether MT5 is running at the same privilege level, port 8766, and `npm test`. The script was written but never run (no PowerShell in the build environment).
+
 ## Develop
 - `npm test` runs core tests (Vitest), desktop tests and bridge tests (unittest).
 - `npm run typecheck`

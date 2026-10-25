@@ -341,3 +341,14 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 
 .seg-item { white-space: nowrap; }
 .perm > .seg { flex: none; }
+
+/* Order review: a full page with a centred reading column; Cancel stays first and focused. */
+.dialog.review .dialog-h, .dialog.review .dialog-b, .dialog.review .dialog-f { padding-left: max(32px, calc((100% - 720px) / 2)); padding-right: max(32px, calc((100% - 720px) / 2)); }
+.dialog.review .dialog-b { flex: 1; font-size: 14px; }
+.dialog.review .dialog-h h3 { font-size: 20px; margin-right: auto; }
+.dialog.review .ac-list { gap: 8px; }
+.dialog.review .dialog-b { align-content: start; gap: 16px; padding-top: 24px; }
+.dialog.review .ac-list { margin: 0; padding: 4px 16px; list-style: none; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--r-md); gap: 0; }
+.dialog.review .ac-list li { display: block; padding: 10px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.dialog.review .ac-list li:last-child { border-bottom: 0; }
+.dialog.review .ac-list li:first-child { font-weight: 600; }

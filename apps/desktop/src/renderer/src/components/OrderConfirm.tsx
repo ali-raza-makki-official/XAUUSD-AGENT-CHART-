@@ -53,8 +53,8 @@ function OrderDialog({ phase, onClose, onConfirm, onReconcile }: { phase: Phase;
   const p = 'p' in phase ? phase.p : null;
   const busy = phase.k === 'preparing' || phase.k === 'sending';
   return (
-    <div className="dialog-back" role="presentation">
-      <div className="dialog" role="alertdialog" aria-modal="true" aria-label="Confirm order action" style={{ width: 520 }}>
+    <div className="dialog-back page" role="presentation">
+      <div className="dialog page review" role="alertdialog" aria-modal="true" aria-label="Confirm order action">
         <div className="dialog-h">
           <h3>{p ? p.preview.title : phase.k === 'error' ? 'Order action failed' : 'Preparing…'}</h3>
           {p?.account && (p.account.demo ? <Chip tone="ai" icon={ShieldAlert}>DEMO account</Chip> : <Chip tone="gold">LIVE account</Chip>)}

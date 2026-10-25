@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 
@@ -23,11 +23,23 @@ export function Tip({ label, pos = 'bottom', children }: { label: string; pos?: 
     }, 350);
   };
   const hide = () => { window.clearTimeout(timer.current); setAt(null); };
+  const pop = useRef<HTMLSpanElement>(null);
+  // Keep the tooltip fully inside the window, wherever its button sits.
+  useLayoutEffect(() => {
+    const el = pop.current;
+    if (!el || !at) return;
+    const r = el.getBoundingClientRect();
+    const M = 8;
+    const dx = r.right > window.innerWidth - M ? window.innerWidth - M - r.right : r.left < M ? M - r.left : 0;
+    const dy = r.bottom > window.innerHeight - M ? window.innerHeight - M - r.bottom : r.top < M ? M - r.top : 0;
+    if (dx) el.style.left = `${at.x + dx}px`;
+    if (dy) el.style.top = `${at.y + dy}px`;
+  }, [at]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   return (
     <span ref={ref} className="tip" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onMouseDown={hide}>
       {children}
-      {at && createPortal(<span role="tooltip" className="tip-pop" data-pos={pos} style={{ left: at.x, top: at.y }}>{label}</span>, document.body)}
+      {at && createPortal(<span ref={pop} role="tooltip" className="tip-pop" data-pos={pos} style={{ left: at.x, top: at.y }}>{label}</span>, document.body)}
     </span>
   );
 }

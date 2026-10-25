@@ -189,3 +189,12 @@ export function analyseStructure(cs: Candle[], o: StructureOptions): StructureRe
     orderBlocks: findOrderBlocks(cs), patterns: findPatterns(cs),
   };
 }
+
+/** One line on whether a zone/level is still valid on real candles ("2 of 3 touches used"). Candles must be oldest first. */
+export function validityLine(candles: Candle[], startTime: number, bottom: number, top: number, side: 'demand' | 'supply'): string {
+  if (candles.length === 0) return 'Validity: unknown (no candles).';
+  const origin = candles.find((k) => k.time >= startTime);
+  const life = zoneLife(candles.filter((k) => k.time > startTime), bottom, top, side, MAX_ZONE_TOUCHES, !!origin && origin.low <= top && origin.high >= bottom);
+  if (life.valid) return `Validity: still valid, ${life.touches} of ${MAX_ZONE_TOUCHES} touches used${life.touches >= MAX_ZONE_TOUCHES ? ' (the next touch ends it)' : ''}.`;
+  return `Validity: no longer valid (${life.touches} touches, or closed through).`;
+}

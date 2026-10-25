@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import {
-  AlertMonitor, AlertStore, DesktopChannel, NotificationLog, NotificationRegistry, NotificationRouter, barStart, describeCondition, referenceIssue,
+  AlertMonitor, AlertStore, DesktopChannel, NotificationLog, NotificationRegistry, NotificationRouter, barStart, describeCondition, referenceIssue, validityLine,
   type Alert, type AlertCommand, type AlertDispatchResult, type AlertsSnapshot, type AlertView, type AppConfig, type Candle, type Drawing,
   type FeedStatus, type FireRecord, type NotificationEvent, type NotificationLogEntry, type Tick, type Timeframe, type AlertActor, type AlertState,
 } from '@aurum/core';
@@ -70,6 +70,15 @@ export class AlertService extends EventEmitter<{ changed: [AlertsSnapshot]; fire
     });
     this.monitor = new AlertMonitor({
       store: this.store, router: this.router, now: this.now, newId: this.newId, symbol: () => d.getConfig().symbol,
+      enrich: async (_alert: Alert, drawing: Drawing | null) => {
+        if (!drawing || drawing.kind !== 'zone') return null;
+        const tf: Timeframe = Array.isArray(drawing.timeframes) && drawing.timeframes.length === 1 ? drawing.timeframes[0]! : 'H1';
+        const candles = await this.d.feed.candles(tf, 500);
+        const price = candles[candles.length - 1]?.close ?? 0;
+        const low = Math.min(drawing.a.price, drawing.b.price), high = Math.max(drawing.a.price, drawing.b.price);
+        const side = drawing.zoneType === 'demand' || drawing.zoneType === 'support' ? 'demand' : drawing.zoneType === 'supply' || drawing.zoneType === 'resistance' ? 'supply' : high <= price ? 'demand' : 'supply';
+        return validityLine(candles, Math.min(drawing.a.time, drawing.b.time), low, high, side);
+      },
       persistence: {
         saveState: (id: string, s: AlertState) => this.guard(() => d.db.saveAlertState(id, s)),
         saveFire: (f: FireRecord) => this.guard(() => d.db.saveAlertFire(f)),

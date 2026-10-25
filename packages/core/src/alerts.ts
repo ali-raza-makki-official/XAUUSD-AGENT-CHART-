@@ -51,6 +51,7 @@ const RangeTarget = z.object({ kind: z.literal('range'), low: Price, high: Price
 export const AlertConditionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('price_cross'), direction: z.enum(['above', 'below']), level: Price, source: PriceSourceSchema.default('bid') }),
   z.object({ type: z.literal('zone'), event: z.enum(['touch', 'enter', 'exit']), target: z.union([DrawingTarget, RangeTarget]), source: PriceSourceSchema.default('bid') }),
+  z.object({ type: z.literal('near'), drawingId: z.string().min(1), distance: z.number().positive().max(1000), source: PriceSourceSchema.default('bid') }),
   z.object({ type: z.literal('trendline'), drawingId: z.string().min(1), tolerance: z.number().min(0).max(1000).default(0), source: PriceSourceSchema.default('bid') }),
   z.object({ type: z.literal('candle_close'), timeframe: TimeframeSchema, direction: z.enum(['above', 'below']), level: Price }),
   z.object({ type: z.literal('spread'), threshold: z.number().positive().finite() }),
@@ -324,6 +325,20 @@ function evalCondition(alert: Alert, snap: AlertSnapshot, st: AlertState): Probe
       }
       return bandEvent(st, `zone:${low}:${high}`, low, high, priceFrom(tick, c.source), c.event, c.source, { source: c.source, tickTime: tick.time });
     }
+    case 'near': {
+      if (!live || !tick) return forgetPrice(st, `Feed is ${snap.feedStatus.state}; no price to compare.`);
+      const d = snap.drawings.find((x) => x.id === c.drawingId);
+      if (!d) return invalid('The watched drawing no longer exists.');
+      let low: number, high: number, key: string;
+      if (d.kind === 'zone') { const b = zoneBounds(d)!; low = b.low; high = b.high; key = `n:${d.id}:${low}:${high}`; }
+      else if (d.kind === 'hline') { low = high = d.price; key = `n:${d.id}:${d.price}`; }
+      else if (d.kind === 'trendline' || d.kind === 'ray') {
+        const line = linePriceAt(d, tick.time);
+        if (line === null) { st.pos = null; return wait('The line does not extend to the current time.', { tickTime: tick.time }); }
+        low = high = line; key = `n:${d.id}:${d.a.time}:${d.a.price}:${d.b.time}:${d.b.price}`;
+      } else return invalid(`Drawing is a ${d.kind}; a level, zone or line is needed.`);
+      return bandEvent(st, key, low - c.distance, high + c.distance, priceFrom(tick, c.source), 'enter', c.source, { source: c.source, level: (low + high) / 2, distance: c.distance, tickTime: tick.time });
+    }
     case 'trendline': {
       if (!live || !tick) return forgetPrice(st, `Feed is ${snap.feedStatus.state}; no price to compare.`);
       const d = snap.drawings.find((x) => x.id === c.drawingId);
@@ -462,6 +477,7 @@ export function describeCondition(c: AlertCondition): string {
   switch (c.type) {
     case 'price_cross': return `Price crosses ${c.direction} ${fmt(c.level)}${SOURCE_NOTE(c.source)}`;
     case 'zone': return `Price ${c.event === 'touch' ? 'touches' : c.event === 'enter' ? 'enters' : 'exits'} ${c.target.kind === 'range' ? `zone ${fmt(c.target.low)}-${fmt(c.target.high)}` : 'a zone drawing'}`;
+    case 'near': return `Price comes within ${fmt(c.distance)} of a watched level`;
     case 'trendline': return `Price touches a trendline${c.tolerance ? ` (±${fmt(c.tolerance)})` : ''}`;
     case 'candle_close': return `${c.timeframe} candle closes ${c.direction} ${fmt(c.level)}`;
     case 'spread': return `Spread above ${fmt(c.threshold)}`;
@@ -482,7 +498,7 @@ export function renderMessage(template: string, vars: Record<string, string | nu
 }
 
 export const DEFAULT_SEVERITY: Record<ConditionType, Severity> = {
-  price_cross: 'info', zone: 'info', trendline: 'info', candle_close: 'info', spread: 'warning', feed: 'warning',
+  price_cross: 'info', near: 'warning', zone: 'info', trendline: 'info', candle_close: 'info', spread: 'warning', feed: 'warning',
   position_plan: 'warning', session: 'info', schedule: 'info',
 };
 
@@ -532,6 +548,10 @@ export function referenceIssue(c: AlertCondition, drawings: readonly Drawing[]):
     const d = find(c.target.drawingId);
     return !d ? `Drawing ${c.target.drawingId} not found.` : d.kind !== 'zone' ? `Drawing ${d.id} is a ${d.kind}; a zone is needed.` : null;
   }
+  if (c.type === 'near') {
+    const d = find(c.drawingId);
+    return !d ? `Drawing ${c.drawingId} not found.` : !['zone', 'hline', 'trendline', 'ray'].includes(d.kind) ? `Drawing ${d.id} is a ${d.kind}; a zone, level or line is needed.` : null;
+  }
   if (c.type === 'trendline') {
     const d = find(c.drawingId);
     return !d ? `Drawing ${c.drawingId} not found.` : !['trendline', 'ray', 'hline'].includes(d.kind) ? `Drawing ${d.id} is a ${d.kind}; a trendline, ray or horizontal line is needed.` : null;
@@ -549,7 +569,14 @@ export function referenceIssue(c: AlertCondition, drawings: readonly Drawing[]):
  * "Alert when price touches this": the alert conditions that make sense for a drawing, first one is the default.
  * `price` is the current bid (used to pick above/below for a plain level), or null when unknown.
  */
-export function alertDraftsForDrawing(d: Drawing, price: number | null): { label: string; condition: AlertCondition }[] {
+export function alertDraftsForDrawing(d: Drawing, price: number | null, approach = 3): { label: string; condition: AlertCondition }[] {
+  const base = baseDrafts(d, price);
+  return ['zone', 'hline', 'trendline', 'ray'].includes(d.kind)
+    ? [...base, { label: `Warn me when price is ${fmt(approach)} away`, condition: { type: 'near', drawingId: d.id, distance: approach, source: 'bid' } }]
+    : base;
+}
+
+function baseDrafts(d: Drawing, price: number | null): { label: string; condition: AlertCondition }[] {
   const dir = (level: number): 'above' | 'below' => (price !== null && level < price ? 'below' : 'above');
   switch (d.kind) {
     case 'hline': return [{ label: `Price crosses ${fmt(d.price)}`, condition: { type: 'price_cross', direction: dir(d.price), level: d.price, source: 'bid' } }];

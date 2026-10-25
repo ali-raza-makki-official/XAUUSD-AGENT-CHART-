@@ -329,3 +329,28 @@ describe('AI alert tools', () => {
     expect(await runAiTool({ ...c, alerts: undefined }, 'list_alerts', {})).toMatchObject({ ok: false, code: 'unavailable' });
   });
 });
+
+describe('watching a drawing', () => {
+  it('watch_drawing creates approaching + reached alerts; the notification carries label, note and validity', async () => {
+    const r = rig();
+    const drawings = new DrawingStore();
+    const zone = makeDrawing({ kind: 'zone', a: { time: 1000, price: 2650 }, b: { time: 2000, price: 2655 } }, { id: 'z-watch', label: 'H1 demand', note: 'Wait for rejection' });
+    drawings.dispatch({ commandId: id(), actor: 'manual', label: 'zone', ops: [{ op: 'create', drawing: zone }] });
+    const port: AlertsPort = { snapshot: () => r.monitor.snapshot(), dispatch: (c: AlertCommand) => r.store.dispatch(c) };
+    const ctx = {
+      store: drawings, permissions: AiPermissionsSchema.parse({ drawingsEdit: true, chartRead: true, alertsAndSetups: true }), alerts: port, newId: id, now: () => T0,
+      getState: () => ({ symbol: 'XAUUSD', timeframe: 'H1', bid: 2680, ask: 2680.2, spread: 0.2, feedStatus: 'connected', account: null, selectedDrawingId: null }),
+    } as unknown as ToolContext;
+    const res = await runAiTool(ctx, 'watch_drawing', { drawingId: 'z-watch', approachPips: 30, whatsapp: true, reason: 'user asked' });
+    expect(res.ok).toBe(true);
+    expect(r.store.list().map((a) => a.name)).toEqual(['Approaching: H1 demand', 'Reached: H1 demand']);
+    expect(r.store.list().every((a) => a.channels.whatsapp)).toBe(true);
+    const withZone = (bid: number): AlertSnapshot => ({ ...snap(bid), drawings: [zone] });
+    r.monitor.evaluate(withZone(2680));
+    r.monitor.evaluate(withZone(2657));
+    await r.monitor.flush();
+    const body = r.shown.at(-1)!.event.body;
+    expect(body).toMatch(/Level: H1 demand/);
+    expect(body).toMatch(/Note: Wait for rejection/);
+  });
+});

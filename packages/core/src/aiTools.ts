@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type AiPermissions } from './settings';
 import { DrawingStore, type DrawingOp } from './drawingStore';
 import { DrawingSchema, makeDrawing, positionIssues, rewardRisk, type Drawing } from './drawing';
-import { lotsForRisk, priceToPips, type ContractSpec } from './risk';
+import { lotsForRisk, pipsToPrice, priceToPips, type ContractSpec } from './risk';
 import { TimeframeSchema, type Candle, type Timeframe } from './feed';
 import { AlertConditionSchema, ChannelsSchema, RepeatSchema, SeveritySchema, makeAlert, referenceIssue, type AlertCondition, type Channels, type Repeat } from './alerts';
 import { type AlertCommand, type AlertDispatchResult } from './alertStore';
@@ -412,6 +412,38 @@ export const AI_TOOLS: AiTool[] = [
       });
       const r = await ctx.alerts.dispatch({ commandId, actor: 'ai', label: `AI created alert "${alert.name}"`, ops: [{ op: 'create', alert }] });
       return r.ok ? { ok: true, data: { commandId, id: alert.id, name: alert.name } } : fail('rejected', r.error);
+    },
+  },
+  {
+    name: 'watch_drawing',
+    description: 'Watch a drawn level, zone or line: creates an "approaching" alert (price comes within approachPips) and a "reached" alert (touch/enter) that notify the user with the drawing label and note. Use it for any level the user or you draw. Notifications go to the desktop and, when whatsapp is true, to WhatsApp. The notification text states the label, note and whether the zone is still valid; you are not called on ticks.',
+    input: z.object({
+      drawingId: z.string().min(1),
+      approachPips: z.number().positive().max(500).default(30).describe('How early to warn, in pips (1 pip = 0.10 on gold).'),
+      whatsapp: z.boolean().default(true),
+      reason: Reason,
+    }),
+    needs: (p) => p.alertsAndSetups, needsLabel: 'Alerts and setups',
+    async run(ctx, input: { drawingId: string; approachPips: number; whatsapp: boolean; reason: string }) {
+      if (!ctx.alerts) return fail('unavailable', 'Alerts are not available in this session.');
+      const d = ctx.store.list().find((x) => x.id === input.drawingId);
+      if (!d) return fail('invalid_input', `Drawing ${input.drawingId} not found.`);
+      if (!['zone', 'hline', 'trendline', 'ray'].includes(d.kind)) return fail('invalid_input', `A ${d.kind} cannot be watched; use a zone, level or line.`);
+      const near: AlertCondition = { type: 'near', drawingId: d.id, distance: pipsToPrice(input.approachPips), source: 'bid' };
+      const price = ctx.getState().bid;
+      const reached: AlertCondition = d.kind === 'zone' ? { type: 'zone', event: 'enter', target: { kind: 'drawing', drawingId: d.id }, source: 'bid' }
+        : d.kind === 'hline' ? { type: 'price_cross', direction: price !== null && d.price < price ? 'below' : 'above', level: d.price, source: 'bid' }
+        : { type: 'trendline', drawingId: d.id, tolerance: 0, source: 'bid' };
+      const title = d.label.trim() || `${d.kind} ${d.id.slice(0, 6)}`;
+      const commandId = cid(ctx);
+      const now = ctx.now?.() ?? Date.now();
+      const mk = (condition: AlertCondition, name: string, severity: 'warning' | 'critical') => makeAlert(condition, {
+        id: ctx.newId?.() ?? globalThis.crypto.randomUUID(), actor: 'ai', now, commandId, reason: input.reason, name,
+        channels: { desktop: true, whatsapp: input.whatsapp }, severity,
+      });
+      const alerts = [mk(near, `Approaching: ${title}`.slice(0, 80), 'warning'), mk(reached, `Reached: ${title}`.slice(0, 80), 'critical')];
+      const r = await ctx.alerts.dispatch({ commandId, actor: 'ai', label: `AI is watching "${title}"`, ops: alerts.map((alert) => ({ op: 'create' as const, alert })) });
+      return r.ok ? { ok: true, data: { commandId, watching: title, alerts: alerts.map((a) => ({ id: a.id, name: a.name })) } } : fail('rejected', r.error);
     },
   },
   {

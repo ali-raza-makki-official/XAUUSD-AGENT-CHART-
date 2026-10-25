@@ -43,6 +43,7 @@ export function buildCondition(f: AlertForm): { ok: true; condition: AlertCondit
     case 'zone':
       raw = { type: 'zone', event: f.zoneEvent, source: f.source, target: f.zoneMode === 'drawing' ? { kind: 'drawing', drawingId: f.drawingId } : { kind: 'range', low: num(f.low), high: num(f.high) } };
       break;
+    case 'near': raw = { type: 'near', drawingId: f.drawingId, distance: num(f.tolerance), source: f.source }; break;
     case 'trendline': raw = { type: 'trendline', drawingId: f.drawingId, tolerance: num(f.tolerance), source: f.source }; break;
     case 'candle_close': raw = { type: 'candle_close', timeframe: f.tf, direction: f.direction, level: num(f.level) }; break;
     case 'spread': raw = { type: 'spread', threshold: num(f.threshold) }; break;
@@ -79,6 +80,7 @@ export function formFromCondition(c: AlertCondition, base: AlertForm = emptyForm
     case 'zone': return c.target.kind === 'drawing'
       ? { ...f, zoneEvent: c.event, zoneMode: 'drawing', drawingId: c.target.drawingId, source: c.source }
       : { ...f, zoneEvent: c.event, zoneMode: 'range', low: String(c.target.low), high: String(c.target.high), source: c.source };
+    case 'near': return { ...f, drawingId: c.drawingId, tolerance: String(c.distance), source: c.source };
     case 'trendline': return { ...f, drawingId: c.drawingId, tolerance: String(c.tolerance), source: c.source };
     case 'candle_close': return { ...f, tf: c.timeframe, direction: c.direction, level: String(c.level) };
     case 'spread': return { ...f, threshold: String(c.threshold) };

@@ -1,3 +1,4 @@
+import type { Drawing } from './drawing';
 import {
   AlertStateSchema, describeCondition, describeRepeat, eventOccurrences, evaluateAlert, forgetSamples, renderMessage,
   type Alert, type AlertSnapshot, type AlertState, type EvalStatus, type EvalValues, type Severity,
@@ -53,9 +54,28 @@ export interface MonitorOptions {
   now?: () => number;
   newId?: () => string;
   symbol?: () => string;
+  /** Extra text for a fired notification (e.g. zone validity from real candles). Failures and slowness never block the alert. */
+  enrich?: (alert: Alert, drawing: Drawing | null) => Promise<string | null>;
 }
 
 const MAX_FIRES = 300;
+const ENRICH_TIMEOUT_MS = 3000;
+
+/** The drawing an alert is about, if any. */
+export function watchedDrawing(alert: Alert, drawings: readonly Drawing[]): Drawing | null {
+  const c = alert.condition;
+  const id = c.type === 'near' || c.type === 'trendline' || c.type === 'position_plan' ? c.drawingId
+    : c.type === 'zone' && c.target.kind === 'drawing' ? c.target.drawingId : null;
+  return id ? drawings.find((d) => d.id === id) ?? null : null;
+}
+
+/** Label and description the user wrote on the drawing, as plain lines. */
+export function drawingDetails(d: Drawing | null): string[] {
+  if (!d) return [];
+  const label = 'label' in d ? String(d.label ?? '').trim() : '';
+  const note = 'note' in d ? String(d.note ?? '').trim() : '';
+  return [label ? `Level: ${label}` : '', note ? `Note: ${note}` : ''].filter(Boolean);
+}
 
 /**
  * Runs the pure engine for every alert whenever the host feeds it a snapshot (live tick, feed status change, timer).
@@ -115,7 +135,7 @@ export class AlertMonitor {
       if (before !== outcome.status) changed = true;
 
       if (outcome.fire || outcome.status === 'missed') {
-        const rec = outcome.fire ? this.record(alert, outcome.reason, outcome.values, snap.now) : this.recordMissed(alert, outcome.reason, outcome.values, snap.now);
+        const rec = outcome.fire ? this.record(alert, outcome.reason, outcome.values, snap.now, watchedDrawing(alert, snap.drawings)) : this.recordMissed(alert, outcome.reason, outcome.values, snap.now);
         out.push(rec);
         changed = true;
       }
@@ -124,21 +144,33 @@ export class AlertMonitor {
     return out;
   }
 
-  private record(alert: Alert, reason: string, values: EvalValues, at: number): FireRecord {
+  private record(alert: Alert, reason: string, values: EvalValues, at: number, drawing: Drawing | null): FireRecord {
     const price = typeof values.price === 'number' ? values.price : typeof values.close === 'number' ? values.close : null;
     const level = typeof values.level === 'number' ? values.level : null;
     const message = renderMessage(alert.message.trim() || '{reason}', {
       name: alert.name, reason, price: price === null ? null : price.toFixed(2), level: level === null ? null : level.toFixed(2),
       time: new Date(at).toISOString(), symbol: this.o.symbol?.() ?? 'XAUUSD',
     });
+    const details = drawingDetails(drawing);
+    const body = [message, ...details].join('\n');
     const event: NotificationEvent = {
-      id: this.newId(), alertId: alert.id, title: alert.name, body: message, severity: alert.severity, at,
+      id: this.newId(), alertId: alert.id, title: alert.name, body, severity: alert.severity, at,
       data: { alertName: alert.name, reason, values, condition: describeCondition(alert.condition), channels: alert.channels, origin: alert.origin.by },
     };
     const rec: FireRecord = { id: this.newId(), alertId: alert.id, alertName: alert.name, at, kind: 'fired', reason, values, message, severity: alert.severity, notificationId: event.id };
     this.push(rec);
-    this.pending.push(this.o.router.dispatch(event));
+    this.pending.push(this.dispatchEnriched(event, alert, drawing));
     return rec;
+  }
+
+  private async dispatchEnriched(event: NotificationEvent, alert: Alert, drawing: Drawing | null): Promise<unknown> {
+    if (this.o.enrich) {
+      try {
+        const extra = await Promise.race([this.o.enrich(alert, drawing), new Promise<null>((r) => setTimeout(() => r(null), ENRICH_TIMEOUT_MS))]);
+        if (extra) event = { ...event, body: `${event.body}\n${extra}` };
+      } catch { /* the alert still goes out without the extra line */ }
+    }
+    return this.o.router.dispatch(event);
   }
 
   private recordMissed(alert: Alert, reason: string, values: EvalValues, at: number): FireRecord {

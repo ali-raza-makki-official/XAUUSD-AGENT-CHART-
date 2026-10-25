@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowUpDown, Ban, Bell, BellOff, BellRing, BoxSelect, CalendarClock, CircleAlert, CircleCheck, Clock, Gauge, Globe2, Hourglass, Pencil,
+  ArrowUpDown, Radar, Ban, Bell, BellOff, BellRing, BoxSelect, CalendarClock, CircleAlert, CircleCheck, Clock, Gauge, Globe2, Hourglass, Pencil,
   Plus, Redo2, Send, Slash, Target, Timer, Trash2, Undo2, Wifi, X, type LucideIcon,
 } from 'lucide-react';
 import {
@@ -13,11 +13,11 @@ import { Button, Chip, EmptyState, IconButton, Section, Segmented, Switch, type 
 
 const cid = () => crypto.randomUUID();
 const TYPE_ICON: Record<ConditionType, LucideIcon> = {
-  price_cross: ArrowUpDown, zone: BoxSelect, trendline: Slash, candle_close: Timer, spread: Gauge, feed: Wifi,
+  price_cross: ArrowUpDown, near: Radar, zone: BoxSelect, trendline: Slash, candle_close: Timer, spread: Gauge, feed: Wifi,
   position_plan: Target, session: Globe2, schedule: CalendarClock,
 };
 const TYPE_LABEL: Record<ConditionType, string> = {
-  price_cross: 'Price cross', zone: 'Zone', trendline: 'Trendline', candle_close: 'Candle close', spread: 'Spread', feed: 'Feed status',
+  price_cross: 'Price cross', near: 'Approaching a level', zone: 'Zone', trendline: 'Trendline', candle_close: 'Candle close', spread: 'Spread', feed: 'Feed status',
   position_plan: 'Position plan', session: 'Session', schedule: 'Schedule',
 };
 const STATUS: Record<AlertView['status'], { tone: Tone; icon: LucideIcon; text: string }> = {
@@ -111,8 +111,8 @@ function AlertDialog({ api, config, edit, onClose, dispatch }: {
   }, [onClose]);
 
   const drawingsOf = (kinds: string[]) => drawings.filter((d) => kinds.includes(d.kind));
-  const needsDrawing = (form.type === 'zone' && form.zoneMode === 'drawing') || form.type === 'trendline' || form.type === 'position_plan';
-  const pick = form.type === 'zone' ? drawingsOf(['zone']) : form.type === 'trendline' ? drawingsOf(['trendline', 'ray', 'hline']) : drawingsOf(['position']);
+  const needsDrawing = (form.type === 'zone' && form.zoneMode === 'drawing') || form.type === 'trendline' || form.type === 'near' || form.type === 'position_plan';
+  const pick = form.type === 'zone' ? drawingsOf(['zone']) : form.type === 'near' ? drawingsOf(['zone', 'hline', 'trendline', 'ray']) : form.type === 'trendline' ? drawingsOf(['trendline', 'ray', 'hline']) : drawingsOf(['position']);
   useEffect(() => {
     if (needsDrawing && !pick.some((d) => d.id === form.drawingId)) setForm((f) => ({ ...f, drawingId: pick[0]?.id ?? '' }));
   }, [needsDrawing, pick.map((d) => d.id).join(','), form.type]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -171,6 +171,7 @@ function AlertDialog({ api, config, edit, onClose, dispatch }: {
             {form.zoneMode === 'drawing' ? drawingSel : (<>{price('al-low', 'Low', 'low')}{price('al-high', 'High', 'high')}</>)}
             {sourceSel}
           </>)}
+          {form.type === 'near' && (<>{drawingSel}{price('al-near', 'Warn when price is this far away (price units)', 'tolerance')}{sourceSel}</>)}
           {form.type === 'trendline' && (<>{drawingSel}{price('al-tol', 'Tolerance (price units)', 'tolerance')}{sourceSel}</>)}
           {form.type === 'candle_close' && (<>
             <Row label="Timeframe">{sel(form.tf, (v) => set('tf', v), TIMEFRAMES.map((t) => ({ value: t, label: t })), 'Timeframe')}</Row>

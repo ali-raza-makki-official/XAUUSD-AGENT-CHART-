@@ -471,3 +471,18 @@ describe('helpers', () => {
     expect(alertDraftsForDrawing(makeDrawing({ kind: 'text', at: { time: 1, price: 1 }, text: 'x' }), null)).toEqual([]);
   });
 });
+
+describe('near (approaching) alert', () => {
+  const zone = makeDrawing({ kind: 'zone', a: { time: 1000, price: 2650 }, b: { time: 2000, price: 2655 } }, { id: 'z1', label: 'H1 demand', note: 'Reaction zone' });
+  const a = mk({ type: 'near', drawingId: 'z1', distance: 3, source: 'bid' });
+  it('fires once when price enters the widened band from outside, not on the first sample', () => {
+    const o = run(a, [snap(2670, { drawings: [zone] }), snap(2662, { drawings: [zone] }), snap(2657.5, { drawings: [zone] }), snap(2652, { drawings: [zone] })]);
+    expect(fires(o)).toEqual([false, false, true, false]);
+    expect(o[2]!.reason).toMatch(/entered the band 2647\.00-2658\.00/);
+  });
+  it('is invalid when the drawing is gone and is offered as a draft', () => {
+    expect(run(a, [snap(2670)])[0]!.status).toBe('invalid');
+    expect(alertDraftsForDrawing(zone, 2670).some((d) => d.condition.type === 'near')).toBe(true);
+    expect(referenceIssue(a.condition, [zone])).toBeNull();
+  });
+});

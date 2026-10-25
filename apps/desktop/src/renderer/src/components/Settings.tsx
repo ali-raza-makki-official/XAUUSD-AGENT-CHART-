@@ -158,6 +158,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
   const [pip, setPip] = useState(String(config.pipSize));
   const [mt5Path, setMt5Path] = useState(config.mt5Path);
   const [mode, setMode] = useState<'python' | 'ea'>(config.mt5Mode);
+  const [copied, setCopied] = useState(false);
   const [ea, setEa] = useState<{ port: number; token: string; connected: boolean } | null>(null);
   useEffect(() => { if (mode === 'ea') void api.eaInfo().then(setEa).catch(() => setEa(null)); }, [mode, api]);
   const [found, setFound] = useState<string[] | null>(null);
@@ -217,7 +218,9 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
                   <div className="calc mono">
                     <div>In MT5: compile and attach <b>AurumBridge.mq5</b> (bridge/mql5) to any chart, tick "Allow algorithmic trading", and add http://127.0.0.1 under Tools &gt; Options &gt; Expert Advisors.</div>
                     <div>HubHost 127.0.0.1 · HubPort {ea?.port ?? '…'}</div>
-                    <div>AuthToken <b>{ea?.token ?? '…'}</b></div>
+                    <div className="row" style={{ gap: 8 }}>AuthToken <b style={{ userSelect: 'text' }}>{ea?.token ?? '…'}</b>
+                      <Button size="sm" disabled={!ea} onClick={() => { void navigator.clipboard.writeText(ea!.token).then(() => setCopied(true)); }}>{copied ? 'Copied' : 'Copy token'}</Button>
+                    </div>
                     <div>{ea?.connected ? 'EA connected.' : 'EA not connected yet.'}</div>
                   </div>
                 )}

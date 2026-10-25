@@ -425,7 +425,11 @@ void DoSubscribe(const string json)
    ArrayResize(g_lastMsc, 0);
    for(int i = 0; i < n; i++)
      {
-      if(!SymbolSelect(syms[i], true)) continue;
+      if(!SymbolSelect(syms[i], true))
+        {
+         Print("AurumBridge: symbol '", syms[i], "' does not exist in this terminal. Use the broker's name (for example XAUUSDm) in Aurum Settings.");
+         continue;
+        }
       int k = ArraySize(g_symbols);
       ArrayResize(g_symbols, k + 1);
       ArrayResize(g_lastBid, k + 1);

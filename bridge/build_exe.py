@@ -1,6 +1,6 @@
 """Freeze the bridge into a single executable with PyInstaller.
 
-Windows (release): pip install MetaTrader5 pyinstaller && python bridge/build_exe.py
+Windows (release): pip install MetaTrader5 "pyinstaller>=6.11" && python bridge/build_exe.py
 Output: apps/desktop/resources/bridge/aurum-bridge(.exe), which electron-builder ships as extraResources.
 
 The MetaTrader5 wheel only exists for Windows, so the real product exe MUST be built on Windows. On Linux the
@@ -26,7 +26,11 @@ def main() -> int:
         "--console",  # stdout/stderr are piped to Electron; the child is spawned with windowsHide
         "--paths", str(ROOT),
         "--hidden-import", "MetaTrader5",
-        "--collect-all", "MetaTrader5",  # native DLL bridge + numpy dependency
+        "--collect-all", "MetaTrader5",  # native DLL bridge
+        # MetaTrader5 imports numpy. Without these the exe fails with "numpy._core.multiarray failed to import".
+        "--collect-all", "numpy",
+        "--hidden-import", "numpy._core._multiarray_umath",
+        "--hidden-import", "numpy._core.multiarray",
         "--distpath", str(OUT),
         "--workpath", str(WORK),
         "--specpath", str(WORK),

@@ -68,6 +68,7 @@ export class EaHub {
   private info: Record<string, any> | null = null; // eslint-disable-line @typescript-eslint/no-explicit-any
   private positions: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   private point = 0;
+  private symbolHint: { at: number; symbol: string; msg: string } | null = null;
 
   constructor(private readonly preferredEaPort = 8766, token?: string) { if (token) (this as { eaToken: string }).eaToken = token; }
 
@@ -141,6 +142,24 @@ export class EaHub {
     });
   }
 
+  /** Why there is no tick: usually the broker names gold differently (Exness: XAUUSDm). Say so, with the real names. */
+  private async noTickReason(): Promise<string> {
+    const cached = this.symbolHint;
+    if (cached && cached.symbol === this.symbol && Date.now() - cached.at < 10_000) return cached.msg;
+    let msg = `No tick yet for ${this.symbol}. The market may be closed.`;
+    try {
+      const exact = await this.request({ action: 'symbols', q: this.symbol }, 5000);
+      if (!(exact.list ?? []).includes(this.symbol)) {
+        const found = new Set<string>();
+        for (const n of ['XAU', 'GOLD']) for (const s of (await this.request({ action: 'symbols', q: n }, 5000)).list ?? []) found.add(s);
+        const names = [...found].slice(0, 8).join(', ');
+        msg = `This MT5 terminal has no symbol named '${this.symbol}'.${names ? ` Gold symbols it does have: ${names}.` : ''} Set the broker symbol in Settings > General and press Save.`;
+      }
+    } catch { /* keep the generic message */ }
+    this.symbolHint = { at: Date.now(), symbol: this.symbol, msg };
+    return msg;
+  }
+
   // ---- app side: the same HTTP shape as the Python bridge ----
   private async onHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const send = (status: number, body: unknown) => { const s = JSON.stringify(body); res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(s) }); res.end(s); };
@@ -154,7 +173,7 @@ export class EaHub {
       const need = () => { if (!this.connected) throw new HttpErr(503, 'The MT5 EA is not connected. Open MT5 and attach AurumBridge to a chart (see docs/MQL5_BRIDGE.md).'); };
       switch (url.pathname) {
         case '/health': return send(200, { ok: true, connected: this.connected, symbol: this.symbol, error: this.connected ? null : 'EA not connected', version: 'ea-0.1' });
-        case '/tick': need(); if (!this.tick) throw new HttpErr(503, `No tick yet for ${this.symbol}.`); return send(200, { symbol: this.symbol, bid: this.tick.bid, ask: this.tick.ask, time: this.tick.time, spread: Number((this.tick.ask - this.tick.bid).toFixed(10)) });
+        case '/tick': need(); if (!this.tick) throw new HttpErr(503, await this.noTickReason()); return send(200, { symbol: this.symbol, bid: this.tick.bid, ask: this.tick.ask, time: this.tick.time, spread: Number((this.tick.ask - this.tick.bid).toFixed(10)) });
         case '/account': { need(); const a = this.account ?? {}; const i = this.info ?? {}; return send(200, { login: i.account_number ?? null, server: i.server ?? '', currency: a.currency ?? i.currency ?? 'USD', demo: !!(a.demo ?? i.demo), name: null, balance: a.balance, equity: a.equity }); }
         case '/candles': { need(); const r = await this.request({ action: 'candles', symbol: this.symbol, tf: q.get('tf') ?? 'M15', count: Number(q.get('count') ?? 500) }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { symbol: this.symbol, tf: q.get('tf') ?? 'M15', candles: r.data.map((c: number[]) => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5] })) }); }
         case '/symbol': { need(); const r = await this.request({ action: 'spec', symbol: this.symbol }); if (!r.ok) throw new HttpErr(503, r.error); this.point = r.point; return send(200, r); }

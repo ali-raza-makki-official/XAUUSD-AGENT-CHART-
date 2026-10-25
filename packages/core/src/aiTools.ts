@@ -220,7 +220,11 @@ export const AI_TOOLS: AiTool[] = [
     name: 'submit_analysis',
     description: 'Deliver the final structured analysis card to the user. Call exactly once at the end of any analysis request. Use noSetup=true when there is no clear setup.',
     input: AnalysisSchema, needs: (p) => p.chartRead, needsLabel: 'Chart read',
-    run: () => ({ ok: true, data: { recorded: true } }),
+    run(ctx) {
+      // No live quote means there is nothing to analyse; a card built on nothing would look like a real analysis.
+      if (ctx.getState().bid === null) return fail('unavailable', 'There is no live price (MT5 is not connected). Do not submit an analysis; tell the user the feed is unavailable.');
+      return { ok: true, data: { recorded: true } };
+    },
   },
   {
     name: 'get_chart_state',

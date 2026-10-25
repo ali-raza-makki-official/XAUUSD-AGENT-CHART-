@@ -286,3 +286,31 @@ input[type='color']::-webkit-color-swatch-wrapper { padding: 0; } input[type='co
 .rtab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; gap: 4px; padding: 0 6px; }
 .app { --chat-w: 400px; }
 @media (max-height: 760px) { .state ol { display: none; } .state-ic { display: none; } }
+
+/* ============ Sober, flat styling (overrides): status = icon + text, notices = plain blocks, no pills or glows ============ */
+.chip { border-radius: var(--r-xs); height: 20px; padding: 0 7px; font-weight: 500; background: transparent; border: 1px solid var(--border-strong); color: var(--t2); }
+.chip-ok, .chip-warn, .chip-danger, .chip-ai { background: transparent; border-color: var(--border-strong); }
+.chip-ok { color: var(--buy); } .chip-warn { color: var(--warn); } .chip-danger { color: var(--sell); } .chip-ai { color: var(--ai); }
+.chip-gold { border-radius: var(--r-xs); }
+.topbar .chip { border-color: transparent; padding: 0 4px; }
+.topbar .chip-gold { border-color: var(--gold); padding: 0 8px; }
+.count, .tfpill { border-radius: var(--r-xs); }
+
+.banner { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; color: var(--t1);
+  background: var(--bg-raised); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--r-sm); }
+.banner > svg { flex: none; margin-top: 2px; }
+.banner > :last-child:not(svg) { flex: 1; min-width: 0; }
+.banner-ok { background: var(--bg-raised); color: var(--t1); border-left-color: var(--buy); border-color: var(--border); }
+.banner-warn { background: var(--bg-raised); color: var(--t1); border-left-color: var(--warn); border-color: var(--border); }
+.banner-danger { background: var(--bg-raised); color: var(--t1); border-left-color: var(--sell); border-color: var(--border); }
+.banner-ok > svg { color: var(--buy); } .banner-warn > svg { color: var(--warn); } .banner-danger > svg { color: var(--sell); }
+.chat .banner-danger { border-radius: 0; border-width: 0 0 1px 0; border-left-width: 3px; }
+
+.state .err { font-family: var(--font-ui); font-size: 12.5px; color: var(--t2); background: var(--bg-raised); border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--r-sm); padding: 10px 12px; }
+.state .state-ic { width: auto; height: auto; background: none; border: 0; color: var(--t3); }
+
+.m-tool { border-radius: var(--r-sm); background: transparent; align-items: flex-start; font-size: 12.5px; padding: 5px 9px; max-width: 100%; }
+.m-tool span { min-width: 0; overflow-wrap: anywhere; }
+.m-tool svg { flex: none; margin-top: 2px; }
+.m-tool.bad { background: var(--bg-raised); color: var(--t1); border-color: var(--border); border-left: 3px solid var(--warn); }
+.m-user { border-radius: var(--r-sm); }

@@ -94,6 +94,15 @@ class AuthFailMt5(FakeMt5):
         pass
 
 
+class ImportMessageTest(unittest.TestCase):
+    def test_import_error_names_the_python_in_use(self):
+        import sys
+        from aurum_bridge.mt5_feed import _import_mt5
+        with self.assertRaises(FeedError) as cm:
+            _import_mt5()  # MetaTrader5 is not installed in the test environment
+        self.assertIn(sys.executable, str(cm.exception))
+
+
 class InitErrorTest(unittest.TestCase):
     def test_auth_failed_gives_actionable_message(self):
         feed = Mt5Feed("GOLD", mt5_module=AuthFailMt5())

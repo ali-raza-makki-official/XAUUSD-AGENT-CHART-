@@ -20,7 +20,7 @@ function parse(content: string): { ok: boolean; data?: unknown; error?: string }
 function summarize(name: string, input: unknown, result: string | undefined): { ok: boolean | null; summary: string } {
   if (result === undefined) return { ok: null, summary: 'working…' };
   const r = parse(result);
-  if (!r?.ok) return { ok: false, summary: r?.error ?? 'failed' };
+  if (!r?.ok) return { ok: false, summary: String(r?.error ?? 'failed').replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') };
   const d = r.data as Record<string, unknown> | undefined;
   const n = (v: unknown) => (Array.isArray(v) ? v.length : 0);
   switch (name) {

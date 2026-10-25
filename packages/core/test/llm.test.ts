@@ -228,3 +228,13 @@ describe('tool schemas are accepted by OpenAI-style providers', () => {
     expect(r).toMatchObject({ ok: false, code: 'invalid_input' });
   });
 });
+
+describe('no analysis without a live price', () => {
+  it('submit_analysis is refused while the feed is down', async () => {
+    const c = ctx();
+    const down = { ...c, getState: () => ({ ...c.getState(), bid: null, ask: null }) };
+    const card = { noSetup: true, dataReference: { timeframes: ['M15'], asOf: 'n/a', feed: 'disconnected' }, marketStructure: { state: 'unclear', summary: 'x' }, levels: [], scenarios: [], invalidation: 'n/a', missingInformation: ['all'], actionsTaken: [] };
+    expect(await runAiTool(down, 'submit_analysis', card)).toMatchObject({ ok: false, code: 'unavailable' });
+    expect((await runAiTool(c, 'submit_analysis', card)).ok).toBe(true);
+  });
+});

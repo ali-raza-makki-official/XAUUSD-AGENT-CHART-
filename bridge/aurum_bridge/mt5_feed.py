@@ -59,10 +59,18 @@ def _import_mt5() -> Any:
         import MetaTrader5 as mt5  # type: ignore
 
         return mt5
-    except ImportError as exc:  # non-Windows or package not installed
+    except ImportError as exc:
+        import platform
+        import sys
+
+        exe = sys.executable or "python"
+        where = f"Aurum is using Python {platform.python_version()} at {exe}."
+        if sys.platform != "win32":
+            raise FeedError(f"The MetaTrader5 package only works on Windows. {where}") from exc
         raise FeedError(
-            "MetaTrader5 Python package is not available. It works on Windows only: "
-            "run `pip install MetaTrader5` on the PC where MT5 is installed."
+            f"Cannot import the MetaTrader5 package ({exc}). {where} Install it for exactly this Python: "
+            f'"{exe}" -m pip install MetaTrader5. If pip finds no matching version, this Python is too new or 32-bit: '
+            "install 64-bit Python 3.12 and set the environment variable AURUM_PYTHON to its python.exe."
         ) from exc
 
 

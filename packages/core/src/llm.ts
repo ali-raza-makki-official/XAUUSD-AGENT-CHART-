@@ -126,6 +126,7 @@ export function buildSystemPrompt(c: PromptContext): string {
     '- Candle times are the broker server clock (same as the MT5 chart), unix seconds. Prices are in USD per ounce; 1 pip = the app pip size (usually 0.10).',
     '- Lot sizes and risk numbers come from calculate_risk_reward (code). Never calculate lots yourself.',
     '- For any analysis request, gather data with tools, then finish by calling submit_analysis exactly once. "No setup" is a valid result: set noSetup=true and explain. Never force a buy/sell idea.',
+    '- If get_chart_state shows no live price or get_candles fails, the feed is down: say so in one sentence and stop. Do not call submit_analysis and do not describe the market.',
     '- Do not claim win probabilities or accuracy percentages. State conditions and invalidation instead.',
     c.canDraw
       ? '- You may draw on the chart with create_drawing / update_drawing / delete_drawing. Every drawing needs a short reason. Prefer a few meaningful levels over many. Use list_drawings and the ids it returns before editing; the user\'s "selected" drawing id is given in the context line. Locked drawings cannot be changed.'

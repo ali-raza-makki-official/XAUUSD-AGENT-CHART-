@@ -115,10 +115,22 @@ export interface PromptContext {
   /** Alert tools allowed (permission alertsAndSetups). */
   canAlert?: boolean;
   orderMode: 'suggest' | 'confirm' | 'automatic';
+  /** 'whatsapp' = the reply is read in a phone chat bubble. */
+  channel?: 'app' | 'whatsapp';
 }
+
+export const WHATSAPP_STYLE = [
+  'WhatsApp reply style (the user reads this on a phone):',
+  '- Keep it short: a one-line answer first, then at most 5 short lines of detail. No long paragraphs.',
+  '- Use WhatsApp formatting only: *bold* for key words and numbers, _italic_ sparingly, "- " for lists. No # headings, no **double stars**, no tables, no code blocks.',
+  '- Put one fact per line, e.g. "Entry: 2650.40", "SL: 2640.40 (100 pips)". Use the same language the user wrote in.',
+  '- If something needs the user to confirm, describe it in one or two lines and stop; the app adds the "1 - Confirm / 2 - Cancel" options itself. Never ask them to type codes.',
+  '- Never invent prices. Only state numbers you got from tools.',
+];
 
 export function buildSystemPrompt(c: PromptContext): string {
   return [
+    ...(c.channel === 'whatsapp' ? [...WHATSAPP_STYLE, ''] : []),
     `You are the trading-chart assistant inside Aurum, a desktop app for ${c.symbol} (broker symbol ${c.brokerSymbol}). The user is a discretionary gold trader.`,
     '',
     'How you work:',

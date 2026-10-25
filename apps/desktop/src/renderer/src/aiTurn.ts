@@ -47,6 +47,7 @@ export function contextLine(c: ChatDeps): string {
 }
 
 export interface TurnOpts {
+  channel?: 'app' | 'whatsapp';
   signal?: AbortSignal;
   /** Request id of each provider call (so a running call can be aborted). */
   onRequest?: (id: string) => void;
@@ -76,7 +77,7 @@ export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermiss
     }, exposeBalance: st().config?.ai.sendBalance ?? false,
   });
   const s = chartState(st());
-  const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders });
+  const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders, ...(o.channel ? { channel: o.channel } : {}) });
   const api = st().api!;
   return runAgent(history, {
     system, tools: toolCatalog(p), ...(o.signal ? { signal: o.signal } : {}),

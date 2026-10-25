@@ -68,11 +68,12 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         const held: WaProposedCall[] = [];
         let card: Analysis | null = null;
         const r = await runTurn(st, history, p, {
+          channel: 'whatsapp',
           intercept: (name, input) => {
             if (name === 'submit_analysis') card = input as Analysis;
             if (!CHART_CHANGING.has(name) || req.level !== 'chart') return null;
             held.push({ name, input });
-            return { ok: true, content: JSON.stringify({ ok: true, data: { held: true, note: 'NOT applied yet. The user must confirm with a code on WhatsApp; tell them what you proposed.' } }) };
+            return { ok: true, content: JSON.stringify({ ok: true, data: { held: true, note: 'NOT applied yet. The user confirms on WhatsApp by replying 1 (Confirm) or 2 (Cancel); the app adds those options. Just describe briefly what you proposed.' } }) };
           },
         });
         const all = repairHistory([...history, ...r.added]);

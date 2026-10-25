@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { formatForWhatsApp } from './whatsappFormat';
 import { CommandEnvelopeSchema, isExpired, type CommandEnvelope } from './command';
 import { safeEqual, sha256Hex, type InboundMessage, type JobResult, type QueuePriority } from './whatsapp';
 
@@ -656,7 +657,7 @@ export class WhatsAppPipeline {
 
   private async reply(to: string, text: string, kind: string, o: { replyTo?: string; commandId?: string; tradeRelated?: boolean; priority?: QueuePriority; images?: PipelineReply['images'] }): Promise<void> {
     const r: PipelineReply = {
-      to, text, kind, tradeRelated: o.tradeRelated ?? false, priority: o.priority ?? 'normal',
+      to, text: formatForWhatsApp(text), kind, tradeRelated: o.tradeRelated ?? false, priority: o.priority ?? 'normal',
       ...(o.replyTo ? { replyToMessageId: o.replyTo } : {}), ...(o.commandId ? { commandId: o.commandId } : {}), ...(o.images ? { images: o.images } : {}),
     };
     let res: JobResult | null = null;

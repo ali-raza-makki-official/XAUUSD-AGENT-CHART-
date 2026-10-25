@@ -93,3 +93,23 @@ describe('AI tools', () => {
     expect(JSON.stringify(create.inputSchema)).toContain('hline');
   });
 });
+
+describe('dead zones are not drawn live', () => {
+  it('rejects an extended zone that was touched 4 times, accepts it when it ends where it died', async () => {
+    const away = (t: number) => ({ time: t, open: 20, high: 21, low: 17, close: 20, volume: 0 });
+    const touch = (t: number) => ({ time: t, open: 20, high: 20, low: 15.5, close: 16.5, volume: 0 });
+    const candles = [away(100), touch(200), away(300), touch(400), away(500), touch(600), away(700), touch(800), away(900)];
+    const { runAiTool, AiPermissionsSchema, DrawingStore } = await import('../src');
+    const store = new DrawingStore();
+    const ctx = {
+      store, permissions: AiPermissionsSchema.parse({ drawingsEdit: true, chartRead: true }), getCandles: async () => candles,
+      getState: () => ({ symbol: 'XAUUSD', timeframe: 'H1', bid: 20, ask: 20.1, spread: 0.1, feedStatus: 'connected', account: null, selectedDrawingId: null }),
+    } as never;
+    const zone = (extendRight: boolean, endTime: number) => ({ items: [{ kind: 'zone', a: { time: 100, price: 16 }, b: { time: endTime, price: 15 }, zoneType: 'demand', extendRight, reason: 'test zone' }] });
+    const bad = await runAiTool(ctx, 'create_drawing', zone(true, 900));
+    expect(bad.ok).toBe(false);
+    expect(JSON.stringify(bad)).toMatch(/no longer valid/);
+    const ok = await runAiTool(ctx, 'create_drawing', zone(false, 400));
+    expect(ok.ok).toBe(true);
+  });
+});

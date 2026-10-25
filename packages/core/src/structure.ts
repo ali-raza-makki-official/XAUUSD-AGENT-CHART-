@@ -13,13 +13,43 @@ export interface Fvg {
   top: number; bottom: number;
   /** 'open' = price has not traded back into it; 'partial' = entered but not filled; 'filled' = fully traded through. */
   status: 'open' | 'partial' | 'filled';
+  /** Separate returns into the gap after it formed. Valid up to 3; the 4th touch ends it. */
+  touches: number; valid: boolean;
+  /** Time the zone stopped being valid (draw it only up to here); null = still valid, may extend right. */
+  invalidatedAt: number | null;
 }
+/** Zones stay valid for this many touches; the next one ends them. */
+export const MAX_ZONE_TOUCHES = 3;
+
+export interface ZoneLife { touches: number; valid: boolean; invalidatedAt: number | null }
+
+/**
+ * Walks the candles after a zone formed. A touch is a separate return: a candle overlapping [bottom, top] whose
+ * previous candle did not. The zone ends at the 4th touch, or when a candle closes through its far side
+ * (below a demand zone / above a supply zone), whichever comes first.
+ */
+export function zoneLife(after: Candle[], bottom: number, top: number, side: 'demand' | 'supply', maxTouches = MAX_ZONE_TOUCHES, startInside = false): ZoneLife {
+  let touches = 0, inside = startInside;
+  for (const k of after) {
+    const overlaps = k.low <= top && k.high >= bottom;
+    const through = side === 'demand' ? k.close < bottom : k.close > top;
+    if (overlaps && !inside) {
+      touches++;
+      if (touches > maxTouches) return { touches, valid: false, invalidatedAt: k.time };
+    }
+    inside = overlaps;
+    if (through) return { touches, valid: false, invalidatedAt: k.time };
+  }
+  return { touches, valid: true, invalidatedAt: null };
+}
+
 export interface Swing { kind: 'swing'; type: 'high' | 'low'; time: number; price: number; swept: boolean }
 export interface LiquidityPool { kind: 'liquidity'; side: 'buy-side' | 'sell-side'; price: number; times: number[]; touches: number; swept: boolean }
 export interface OrderBlock {
   kind: 'order_block'; direction: 'bullish' | 'bearish'; time: number; top: number; bottom: number;
   /** Candle at which the displacement closed beyond the prior swing. */
-  breakTime: number; mitigated: boolean;
+  breakTime: number;
+  touches: number; valid: boolean; invalidatedAt: number | null;
 }
 export interface CandlePattern { kind: 'pattern'; name: string; bias: 'bullish' | 'bearish' | 'neutral'; time: number; high: number; low: number }
 
@@ -49,6 +79,7 @@ export function findFvgs(cs: Candle[], minGap = 0): Fvg[] {
     else if (c.high < a.low) { dir = 'bearish'; top = a.low; bottom = c.high; }
     if (!dir || top - bottom < minGap || top - bottom <= 0) continue;
     let status: Fvg['status'] = 'open';
+    const life = zoneLife(cs.slice(i + 1), bottom, top, dir === 'bullish' ? 'demand' : 'supply');
     for (let j = i + 1; j < cs.length; j++) {
       const k = cs[j]!;
       if (dir === 'bullish') {
@@ -59,7 +90,10 @@ export function findFvgs(cs: Candle[], minGap = 0): Fvg[] {
         if (k.high > bottom) status = 'partial';
       }
     }
-    out.push({ kind: 'fvg', direction: dir, startTime: a.time, endTime: c.time, top, bottom, status });
+    const filled = status === 'filled';
+    let invalidatedAt = life.invalidatedAt;
+    if (filled && invalidatedAt === null) invalidatedAt = cs.slice(i + 1).find((k) => (dir === 'bullish' ? k.low <= bottom : k.high >= top))?.time ?? null;
+    out.push({ kind: 'fvg', direction: dir, startTime: a.time, endTime: c.time, top, bottom, status, touches: life.touches, valid: life.valid && !filled, invalidatedAt });
   }
   return out;
 }
@@ -115,8 +149,8 @@ export function findOrderBlocks(cs: Candle[]): OrderBlock[] {
     for (let j = i - 1; j >= i - 5; j--) {
       const k = cs[j]!;
       if (bull ? k.close < k.open : k.close > k.open) {
-        const mitigated = cs.slice(i + 1).some((m) => (bull ? m.low <= k.high : m.high >= k.low));
-        out.push({ kind: 'order_block', direction: bull ? 'bullish' : 'bearish', time: k.time, top: k.high, bottom: k.low, breakTime: c.time, mitigated });
+        const life = zoneLife(cs.slice(i + 1), k.low, k.high, bull ? 'demand' : 'supply');
+        out.push({ kind: 'order_block', direction: bull ? 'bullish' : 'bearish', time: k.time, top: k.high, bottom: k.low, breakTime: c.time, ...life });
         break;
       }
     }

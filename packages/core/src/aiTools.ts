@@ -11,7 +11,7 @@ import { IndicatorStore, IndicatorSchema, makeIndicator, indicatorTitle, outputS
 import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValues, warmupBars, type IndicatorType } from './indicators';
 import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
-import { analyseStructure } from './structure';
+import { analyseStructure, zoneLife } from './structure';
 import { ORDER_TOOLS, type OrdersPort } from './orderTools';
 
 /**
@@ -216,6 +216,30 @@ const AnalysisSchema = z.object({
 });
 export type Analysis = z.infer<typeof AnalysisSchema>;
 
+/**
+ * A zone that is still drawn "live" (extended right, or reaching the last candle) must still be valid on real
+ * candles: at most 3 separate touches and never closed through. Otherwise it must end where it died.
+ */
+async function deadZoneIssue(ctx: ToolContext, items: NewDrawingInput[]): Promise<string | null> {
+  const zones = items.filter((d): d is Extract<NewDrawingInput, { kind: 'zone' }> => d.kind === 'zone');
+  if (!zones.length) return null;
+  const tf = ctx.getState().timeframe;
+  let candles: Candle[];
+  try { candles = await ctx.getCandles(tf, 500); } catch { return 'Could not load real candles to validate the zone. Not drawn.'; }
+  const last = candles[candles.length - 1]?.time ?? 0;
+  for (const z of zones) {
+    const start = Math.min(z.a.time, z.b.time), end = Math.max(z.a.time, z.b.time);
+    if (!z.extendRight && end < last) continue;
+    const top = Math.max(z.a.price, z.b.price), bottom = Math.min(z.a.price, z.b.price);
+    const px = candles[candles.length - 1]?.close ?? top;
+    const side = z.zoneType === 'demand' || z.zoneType === 'support' ? 'demand' : z.zoneType === 'supply' || z.zoneType === 'resistance' ? 'supply' : (top <= px ? 'demand' : 'supply');
+    const origin = candles.find((k) => k.time >= start);
+    const life = zoneLife(candles.filter((k) => k.time > start), bottom, top, side, 3, !!origin && origin.low <= top && origin.high >= bottom);
+    if (!life.valid) return `Zone ${bottom}-${top} is no longer valid on real candles (${life.touches} touches or closed through at ${life.invalidatedAt}). Do not extend it to the right: end it at ${life.invalidatedAt}, or skip it. Use find_zones for valid zones.`;
+  }
+  return null;
+}
+
 export const AI_TOOLS: AiTool[] = [
   {
     name: 'submit_analysis',
@@ -255,12 +279,12 @@ export const AI_TOOLS: AiTool[] = [
   },
   {
     name: 'find_zones',
-    description: 'Detect real market structure on the live MT5 candles: fair value gaps (FVG), swing highs/lows, liquidity pools (equal highs/lows), order blocks and candlestick patterns. Every item has exact candle times and prices computed from data. When drawing zones or levels, use these times/prices only; never invent a level. Items are heuristics, not trade signals; say so if asked.',
+    description: 'Detect real market structure on the live MT5 candles: fair value gaps (FVG), swing highs/lows, liquidity pools (equal highs/lows), order blocks and candlestick patterns. Every item has exact candle times and prices computed from data. When drawing zones or levels, use these times/prices only; never invent a level. A zone is valid for 3 touches (returns); the 4th touch or a close through it ends it. Each zone has touches, valid and invalidatedAt: draw it from its start time to invalidatedAt, and set extendRight only when it is valid (invalidatedAt null). Set the timeframes field of each drawing to the timeframe you analysed. Items are heuristics, not trade signals; say so if asked.',
     input: z.object({
       timeframe: TimeframeSchema.optional(),
       count: z.number().int().min(50).max(500).default(300),
       include: z.array(z.enum(['fvg', 'swings', 'liquidity', 'order_blocks', 'patterns'])).optional().describe('Default: all.'),
-      onlyActive: z.boolean().default(true).describe('Hide filled FVGs, swept liquidity/swings and mitigated order blocks.'),
+      onlyActive: z.boolean().default(true).describe('Hide invalid zones (filled, 4+ touches, closed through), swept liquidity and swings.'),
       limit: z.number().int().min(1).max(30).default(10).describe('Max items per group, most recent first.'),
     }),
     needs: (p) => p.chartRead, needsLabel: 'Chart read',
@@ -278,10 +302,10 @@ export const AI_TOOLS: AiTool[] = [
       return { ok: true, data: {
         timeframe: tf, candlesAnalysed: c.length, from: c[0]!.time, to: c[c.length - 1]!.time,
         note: 'Computed from real candles with fixed rules. Heuristics, not signals.',
-        ...(want('fvg') ? { fvgs: recent(r.fvgs.filter((x) => !act || x.status !== 'filled')) } : {}),
+        ...(want('fvg') ? { fvgs: recent(r.fvgs.filter((x) => !act || x.valid)) } : {}),
         ...(want('swings') ? { swings: recent(r.swings.filter((x) => !act || !x.swept)) } : {}),
         ...(want('liquidity') ? { liquidity: r.liquidity.filter((x) => !act || !x.swept).slice(-input.limit).reverse() } : {}),
-        ...(want('order_blocks') ? { orderBlocks: recent(r.orderBlocks.filter((x) => !act || !x.mitigated)) } : {}),
+        ...(want('order_blocks') ? { orderBlocks: recent(r.orderBlocks.filter((x) => !act || x.valid)) } : {}),
         ...(want('patterns') ? { patterns: recent(r.patterns) } : {}),
       } };
     },
@@ -300,9 +324,11 @@ export const AI_TOOLS: AiTool[] = [
     description: 'Create one or more drawings (levels, zones, trendlines, fib, entry/SL/TP position). All items are applied together and undone together. Each needs a short reason. A position drawing is a plan on the chart, NOT an order.',
     input: z.object({ items: z.array(NewDrawing).min(1).max(20) }),
     needs: (p) => p.drawingsEdit, needsLabel: 'Drawings edit',
-    run(ctx, input: { items: NewDrawingInput[] }) {
+    async run(ctx, input: { items: NewDrawingInput[] }) {
       const bad = priceSanity(ctx, input.items.flatMap(pricesOf));
       if (bad) return fail('invalid_input', bad);
+      const dead = await deadZoneIssue(ctx, input.items);
+      if (dead) return fail('invalid_input', dead);
       const commandId = cid(ctx);
       const drawings = input.items.map((d) => toDrawing(ctx, d, commandId));
       for (const d of drawings) {

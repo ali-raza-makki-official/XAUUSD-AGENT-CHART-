@@ -40,3 +40,6 @@ export * from './behavior';
 export * from './views';
 export * from './briefing';
 export * from './assistant';
+export * from './paper';
+export * from './learning';
+export * from './insights';

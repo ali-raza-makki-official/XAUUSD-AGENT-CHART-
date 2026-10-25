@@ -21,6 +21,8 @@ export interface AssistantDeps {
   /** Ask the user whether to take a trade (renderer dialog + WhatsApp options). */
   ask(plan: TradePlan, text: string): void;
   changed(): void;
+  /** Called whenever a plan is created or changes (the paper-trading shadow follows it). */
+  onPlan?(plan: TradePlan): void;
   now?: () => number;
   newId?: () => string;
 }
@@ -73,6 +75,7 @@ export class AssistantService {
     const next = TradePlanSchema.parse({ ...p, ...patch });
     this.d.plans.save(next);
     this.d.changed();
+    this.d.onPlan?.(next);
     return next;
   }
 
@@ -86,6 +89,7 @@ export class AssistantService {
     });
     this.d.plans.save(plan);
     this.d.changed();
+    this.d.onPlan?.(plan);
     return plan;
   }
 

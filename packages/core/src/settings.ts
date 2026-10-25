@@ -4,6 +4,7 @@ import { NotificationSettingsSchema } from './notifications';
 import { TimeframeSchema } from './feed';
 import { ChecklistSettingsSchema, DEFAULT_CHECKLIST } from './preTrade';
 import { AssistantSettingsSchema, DEFAULT_ASSISTANT } from './assistant';
+import { LearningSettingsSchema, DEFAULT_LEARNING } from './learning';
 import { ChartLayoutSchema, DEFAULT_PANE_TIMEFRAMES, PaneTimeframesSchema } from './chartLayout';
 import { ContextSettingsSchema } from './contextConnectors';
 
@@ -85,6 +86,7 @@ export const AppConfigSchema = z.object({
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
   checklist: ChecklistSettingsSchema.default(() => DEFAULT_CHECKLIST),
   assistant: AssistantSettingsSchema.default(() => DEFAULT_ASSISTANT),
+  learning: LearningSettingsSchema.default(() => DEFAULT_LEARNING),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
   ai: AiSettingsSchema.default(() => AiSettingsSchema.parse({})),
   notifications: NotificationSettingsSchema.default(() => NotificationSettingsSchema.parse({})),

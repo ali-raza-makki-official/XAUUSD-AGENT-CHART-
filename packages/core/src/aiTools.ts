@@ -141,6 +141,8 @@ export interface ToolContext {
   views?: { getMine(): Promise<UserView | null>; getAi(): Promise<AiView | null>; saveAi(v: AiView): Promise<void> };
   /** Trade Assistant plans and pip views (the app persists them; the user approves). Absent = the tools report unavailable. */
   plans?: PlansPort;
+  /** Paper trading: records an idea so it is judged later on real ticks. Absent = ideas are not recorded. */
+  paper?: { record(idea: { source: 'analysis' | 'user'; side: 'buy' | 'sell'; zone: { low: number; high: number }; slPips: number; tpPips: number | null; entry?: 'touch' | 'limit'; note?: string }): Promise<unknown> };
   captureChart?: () => Promise<{ mime: string; data: string } | null>;
 }
 
@@ -261,6 +263,13 @@ const AnalysisSchema = z.object({
   invalidation: z.string().max(400),
   missingInformation: z.array(z.string().max(200)).max(8),
   actionsTaken: z.array(z.string().max(200)).max(10).describe('What you created/edited on the chart, if anything.'),
+  tradeIdea: z.object({
+    side: z.enum(['buy', 'sell']),
+    zone: z.object({ low: z.number().positive(), high: z.number().positive() }),
+    slPips: z.number().positive().max(2000),
+    tpPips: z.number().positive().max(5000),
+    entry: z.enum(['touch', 'limit']).default('touch'),
+  }).optional().describe('Only when the analysis implies a concrete trade: the zone price range (exact numbers from your tools) and the stop and target in PIPS. Aurum paper-trades it on real ticks to learn whether such ideas work. Omit it when there is no trade idea (noSetup).'),
 });
 export type Analysis = z.infer<typeof AnalysisSchema>;
 
@@ -298,6 +307,9 @@ export const AI_TOOLS: AiTool[] = [
       if (ctx.getState().bid === null) return fail('unavailable', 'There is no live price (MT5 is not connected). Do not submit an analysis; tell the user the feed is unavailable.');
       // Kept so the user's "my view vs AI view" screen compares against the AI's latest real analysis.
       try { await ctx.views?.saveAi(aiViewFromAnalysis(input, ctx.now?.() ?? Date.now())); } catch { /* the card is still delivered */ }
+      if (input.tradeIdea && !input.noSetup && input.tradeIdea.zone.high > input.tradeIdea.zone.low) {
+        try { await ctx.paper?.record({ source: 'analysis', ...input.tradeIdea, note: input.marketStructure.summary.slice(0, 200) }); } catch { /* the card is still delivered */ }
+      }
       return { ok: true, data: { recorded: true } };
     },
   },

@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { AssistantSettingsSchema, ChecklistSettingsSchema, NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { AssistantSettingsSchema, ChecklistSettingsSchema, LearningSettingsSchema, NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig, type FeedStatus } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
@@ -11,6 +11,9 @@ import { makeTranscriber, voiceRoute } from './transcribe';
 import { ConnectionWatcher } from './connectionWatch';
 import { tickBriefing } from './briefingScheduler';
 import { AssistantService, SqlitePlanStore, describePlan } from './assistant';
+import { PaperService, SqlitePaperStore } from './paper';
+import { TickStore } from './ticks';
+import { LearningService } from './learning';
 import { atLeast, closedTrades, composeBriefing, summarize, type AiView, type BriefingInput, type CalendarEvent, type NoTradeRule, type UserView } from '@aurum/core';
 import { kvGet, kvSet, closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
@@ -37,6 +40,9 @@ let alerts: AlertService;
 let wa: WhatsAppService;
 let watcher: ConnectionWatcher | null = null;
 let assistant: AssistantService | null = null;
+let paper: PaperService | null = null;
+let learning: LearningService | null = null;
+let tickStore: TickStore | null = null;
 let briefingTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Real data for the morning briefing. Anything that cannot be read is passed as null and left out of the text. */
@@ -155,6 +161,7 @@ function registerIpc(): void {
         notifications: NotificationSettingsSchema,
         checklist: ChecklistSettingsSchema,
         assistant: AssistantSettingsSchema,
+        learning: LearningSettingsSchema,
       })
       .partial()
       .parse(patch);
@@ -270,6 +277,21 @@ function registerIpc(): void {
   ipcMain.handle(IPC.assistTake, (_e, id: unknown) => assistant!.take(planId.parse(id)));
   ipcMain.handle(IPC.assistSkip, (_e, id: unknown) => assistant!.skip(planId.parse(id)));
   ipcMain.handle(IPC.assistPips, async () => assistant!.pipsView(await orders.snapshot(), config.pipSize));
+  ipcMain.handle(IPC.paperList, () => paper!.list());
+  ipcMain.handle(IPC.learnInsights, (_e, force: unknown) => learning!.insights(force === true));
+  ipcMain.handle(IPC.learnApply, (_e, sl: unknown, tp: unknown) => { learning!.apply(z.number().positive().max(2000).parse(sl), z.number().positive().max(5000).parse(tp), false, 'Applied by you from the Learning tab.'); return config; });
+  ipcMain.handle(IPC.learnRevert, () => { const ok = learning!.revert(); return { ok, config }; });
+  const paperIdea = z.object({
+    source: z.enum(['analysis', 'user']), side: z.enum(['buy', 'sell']), zone: z.object({ low: z.number().positive(), high: z.number().positive() }).refine((zn) => zn.high > zn.low),
+    slPips: z.number().positive().max(2000), tpPips: z.number().positive().max(5000).nullable(), entry: z.enum(['touch', 'limit']).default('touch'), note: z.string().max(300).default(''),
+  });
+  ipcMain.handle(IPC.paperRecord, (_e, raw: unknown) => {
+    const i = paperIdea.parse(raw);
+    const dup = paper!.similar(i.side, i.zone, i.source);
+    if (dup) return dup;
+    return paper!.create({ id: `paper-${i.source}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, source: i.source, side: i.side, entry: i.entry, zone: i.zone, slPips: i.slPips, tpPips: i.tpPips, note: i.note });
+  });
+  ipcMain.handle(IPC.tickStats, () => tickStore!.stats());
   ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
   ipcMain.handle(IPC.ordersActivity, () => orders.activity());
@@ -326,7 +348,19 @@ else {
     });
     registerWhatsAppIpc(ipcMain, wa, async () => wa.sendBriefing(composeBriefing(await briefingInput())));
     wa.start();
+    tickStore = new TickStore(getDb);
+    tickStore.start();
+    tickStore.purge(Date.now() - config.learning.retentionDays * 86_400_000);
+    setInterval(() => tickStore?.purge(Date.now() - config.learning.retentionDays * 86_400_000), 6 * 3600_000).unref();
+    paper = new PaperService({ getConfig: () => config, store: new SqlitePaperStore(getDb), changed: () => send('paper:changed', null) });
+    learning = new LearningService({
+      getConfig: () => config, paper: paper!, ticks: tickStore!, kv: { get: (k) => kvGet(k as never), set: (k, v) => kvSet(k as never, v) },
+      setDefaults: (sl, tp) => { config = saveConfig({ assistant: { ...config.assistant, defaults: { ...config.assistant.defaults, slPips: sl, tpPips: tp } } }, config); send('config:changed', config); },
+      notify: (text) => { send('assist:event', { text, priority: 'normal' }); void wa?.notifyAssistant(text, 'normal'); },
+    });
+    setInterval(() => learning?.maybeAutoTune(), 30 * 60_000).unref();
     assistant = new AssistantService({
+      onPlan: (p) => paper?.syncPlan(p),
       getConfig: () => config, engine: orders.engine, snapshot: () => orders.snapshot(), plans: new SqlitePlanStore(getDb),
       kv: { get: (k) => kvGet(k as never), set: (k, v) => kvSet(k as never, v) },
       notify: (text, priority) => { send('assist:event', { text, priority }); void wa?.notifyAssistant(text, priority); },
@@ -347,7 +381,12 @@ else {
       take: (id) => assistant!.take(id), approve: (id, o) => assistant!.approve(id, o),
       proposedSince: (ms) => { const p = assistant!.proposedSince(ms); return p ? { id: p.id, summary: describePlan(p) } : null; },
     });
-    bridge.on('tick', (t) => { void assistant?.onTick({ bid: t.bid, ask: t.ask }); });
+    bridge.on('tick', (t) => {
+      const ts = Date.now();
+      if (config.learning.recordTicks) tickStore?.record(ts, t.bid, t.ask);
+      paper?.onTick({ ts, bid: t.bid, ask: t.ask });
+      void assistant?.onTick({ bid: t.bid, ask: t.ask });
+    });
     watcher = new ConnectionWatcher({ notify: (text, priority) => { void wa?.notifyStatus(text, priority); } });
     bridge.on('status', (st: FeedStatus) => watcher?.onStatus(st));
     briefingTimer = setInterval(() => {
@@ -376,6 +415,7 @@ else {
       return;
     }
     hub?.stop();
+    tickStore?.stop();
     alerts?.stop();
     void wa?.stop();
     void bridge.stop();

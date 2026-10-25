@@ -80,6 +80,14 @@ export interface AurumApi extends WhatsAppApi {
   onAssistEvent(cb: (e: { text: string; priority: 'critical' | 'normal' }) => void): () => void;
   onAssistAsk(cb: (e: { plan: import('@aurum/core').TradePlan; text: string }) => void): () => void;
   onAssistChanged(cb: () => void): () => void;
+  paperList(): Promise<import('@aurum/core').PaperTrade[]>;
+  paperRecord(idea: PaperIdea): Promise<import('@aurum/core').PaperTrade>;
+  learnInsights(force?: boolean): Promise<LearnInsights>;
+  learnApply(slPips: number, tpPips: number): Promise<AppConfig>;
+  learnRevert(): Promise<{ ok: boolean; config: AppConfig }>;
+  onConfigChanged(cb: (c: AppConfig) => void): () => void;
+  tickStats(): Promise<{ count: number; first: number | null; last: number | null; approxBytes: number }>;
+  onPaperChanged(cb: () => void): () => void;
   ordersHistory(days: number): Promise<import('@aurum/core').BrokerDeal[]>;
   ordersActivity(): Promise<ActivityEntry[]>;
   eaInfo(): Promise<{ port: number; token: string; connected: boolean }>;
@@ -133,6 +141,7 @@ export const IPC = {
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
   ordersHistory: 'orders:history',
+  paperList: 'paper:list', paperRecord: 'paper:record', learnInsights: 'learn:insights', learnApply: 'learn:apply', learnRevert: 'learn:revert', configChanged: 'config:changed', tickStats: 'ticks:stats', paperChanged: 'paper:changed',
   assistList: 'assist:list', assistCreate: 'assist:create', assistApprove: 'assist:approve', assistCancel: 'assist:cancel', assistTake: 'assist:take', assistSkip: 'assist:skip', assistPips: 'assist:pips',
   assistEvent: 'assist:event', assistAsk: 'assist:ask', assistChanged: 'assist:changed',
   autoStartGet: 'app:autoStartGet',
@@ -178,3 +187,6 @@ export interface JournalCheckSnapshot { items: { id: string; label: string; stat
 
 export interface AssistPlanInput { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry?: 'touch' | 'limit'; slPips?: number; tpPips?: number | null; riskPct?: number; autoTake?: boolean; expiryHours?: number; note?: string }
 export interface AssistPipRow { ticket: number; side: 'buy' | 'sell'; lots: number; open: number; pips: number | null; slPips: number | null; tpPips: number | null }
+
+export interface PaperIdea { source: 'analysis' | 'user'; side: 'buy' | 'sell'; zone: { low: number; high: number }; slPips: number; tpPips: number | null; entry?: 'touch' | 'limit'; note?: string }
+export type LearnInsights = import('./main/learning').Insights;

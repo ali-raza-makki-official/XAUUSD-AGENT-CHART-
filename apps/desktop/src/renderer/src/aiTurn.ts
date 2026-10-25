@@ -88,6 +88,7 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     captureChart,
+    paper: { record: (i: Parameters<NonNullable<import('@aurum/core').ToolContext['paper']>['record']>[0]) => st().api!.paperRecord(i as never) },
     plans: {
       defaults: () => { const d = st().config?.assistant.defaults; return { slPips: d?.slPips ?? 70, tpPips: d?.tpPips ?? 140, riskPct: d?.riskPct ?? 0.3, expiryHours: d?.expiryHours ?? 24 }; },
       create: async (i: { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry: 'touch' | 'limit'; slPips: number; tpPips: number | null; riskPct: number; expiryHours: number; note: string }) => {

@@ -19,12 +19,14 @@ export function useFeed() {
   useEffect(() => {
     if (!api) return;
     void api.getConfig().then(setConfig);
+    const offCfg = api.onConfigChanged(setConfig);
     void api.snapshot().then((s) => {
       setStatus(s.status);
       setTick(s.tick);
       setAccount(s.account);
     });
     const offs = [
+      offCfg,
       api.onTick(setTick),
       api.onStatus((s) => {
         setStatus(s);

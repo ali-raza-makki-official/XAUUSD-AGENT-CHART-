@@ -89,6 +89,11 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
     captureChart,
     paper: { record: (i: Parameters<NonNullable<import('@aurum/core').ToolContext['paper']>['record']>[0]) => st().api!.paperRecord(i as never) },
+    ...(st().config?.learning.memory && st().api ? { memory: {
+      remember: async (n: { kind: 'lesson' | 'preference' | 'fact'; text: string; weight: number }) => ({ id: (await st().api!.memoryRemember({ ...n, source: 'ai' })).id }),
+      recall: (q: string, days: number) => st().api!.memoryRecall(q, days),
+      stats: async () => { const l = await st().api!.learnInsights(); return { paperTradesFinished: l.finished, open: l.open, findings: l.findings.map((f) => f.text), suggestion: l.tuning ? { currentSlPips: l.tuning.current.slPips, currentTpPips: l.tuning.current.tpPips, bestSlPips: l.tuning.best.slPips, bestTpPips: l.tuning.best.tpPips, confident: l.tuning.confident, reason: l.tuning.reason } : null, ticksRecorded: l.ticks.count }; },
+    } } : {}),
     plans: {
       defaults: () => { const d = st().config?.assistant.defaults; return { slPips: d?.slPips ?? 70, tpPips: d?.tpPips ?? 140, riskPct: d?.riskPct ?? 0.3, expiryHours: d?.expiryHours ?? 24 }; },
       create: async (i: { side: 'buy' | 'sell'; zone: { low: number; high: number }; entry: 'touch' | 'limit'; slPips: number; tpPips: number | null; riskPct: number; expiryHours: number; note: string }) => {
@@ -114,9 +119,14 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     }, exposeBalance: st().config?.ai.sendBalance ?? false,
   });
   const s = chartState(st());
-  const system = buildSystemPrompt({ symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders, ...(o.channel ? { channel: o.channel } : {}) });
+  const memory = st().config?.learning.memory ? await st().api!.memoryDigest().catch(() => '') : '';
+  const lastUser = [...history].reverse().find((m) => m.role === 'user' && m.blocks.some((b) => b.type === 'text'));
+  const userText = lastUser?.blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n') ?? '';
+  const chan = o.channel ?? 'app';
+  if (userText && st().config?.learning.memory) void st().api!.memoryLog({ channel: chan, role: 'user', text: userText }).catch(() => undefined);
+  const system = buildSystemPrompt({ memory, symbol: s.symbol, brokerSymbol: s.brokerSymbol, readOnly: !p.drawingsEdit && !p.alertsAndSetups, canDraw: p.drawingsEdit, canAlert: p.alertsAndSetups, orderMode: p.orders, ...(o.channel ? { channel: o.channel } : {}) });
   const api = st().api!;
-  return runAgent(history, {
+  const res = await runAgent(history, {
     system, tools: [...toolCatalog(p), ...(o.extraTools ?? [])], ...(o.signal ? { signal: o.signal } : {}),
     llm: (req) => { const id = crypto.randomUUID(); o.onRequest?.(id); return api.aiChat(id, req); },
     exec: async (name, input) => {
@@ -133,6 +143,10 @@ export async function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiP
     ...(o.onMessage ? { onMessage: o.onMessage } : {}),
     ...(o.onEvent ? { onEvent: o.onEvent } : {}),
   });
+  const reply = [...res.added].reverse().find((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'text'));
+  const replyText = reply?.blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n') ?? '';
+  if (replyText && st().config?.learning.memory) void api.memoryLog({ channel: chan, role: 'assistant', text: replyText }).catch(() => undefined);
+  return res;
 }
 
 /** Executes already-confirmed tool calls against the live stores (same functions the chat uses). */

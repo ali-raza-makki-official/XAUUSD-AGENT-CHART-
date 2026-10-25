@@ -8,7 +8,7 @@ describe('database schema', () => {
     db.exec(SCHEMA_SQL);
     db.exec(SCHEMA_SQL);
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((t) => t.name);
-    for (const t of ['drawings', 'indicators', 'chats', 'command_log', 'alerts', 'alert_state', 'alert_fires', 'alert_commands', 'notifications', 'context_cache', 'trade_checks', 'kv', 'trade_plans', 'ticks', 'paper_trades']) expect(tables).toContain(t);
+    for (const t of ['drawings', 'indicators', 'chats', 'command_log', 'alerts', 'alert_state', 'alert_fires', 'alert_commands', 'notifications', 'context_cache', 'trade_checks', 'kv', 'trade_plans', 'ticks', 'paper_trades', 'chat_log', 'memory_notes']) expect(tables).toContain(t);
   });
   it('every table carries workspace_id (SaaS-ready)', () => {
     const db = new DatabaseSync(':memory:');

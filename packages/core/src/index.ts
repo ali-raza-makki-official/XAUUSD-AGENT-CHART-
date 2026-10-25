@@ -43,3 +43,4 @@ export * from './assistant';
 export * from './paper';
 export * from './learning';
 export * from './insights';
+export * from './memory';

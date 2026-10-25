@@ -68,6 +68,15 @@ export const SCHEMA_SQL = `
       id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, status TEXT NOT NULL, updated_at INTEGER NOT NULL,
       PRIMARY KEY (id, workspace_id)
     );
+    CREATE TABLE IF NOT EXISTS chat_log (
+      id TEXT NOT NULL, workspace_id TEXT NOT NULL, ts INTEGER NOT NULL, channel TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL,
+      PRIMARY KEY (id, workspace_id)
+    );
+    CREATE INDEX IF NOT EXISTS chat_log_ts ON chat_log (workspace_id, ts);
+    CREATE TABLE IF NOT EXISTS memory_notes (
+      id TEXT NOT NULL, workspace_id TEXT NOT NULL, json TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (id, workspace_id)
+    );
     CREATE TABLE IF NOT EXISTS order_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL
     );

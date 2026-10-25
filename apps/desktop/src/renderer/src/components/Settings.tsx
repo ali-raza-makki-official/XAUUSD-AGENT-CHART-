@@ -126,6 +126,7 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
   const [risk, setRisk] = useState(config.risk);
   const [cl, setCl] = useState(config.checklist);
   const [asst, setAsst] = useState(config.assistant);
+  const [lrn, setLrn] = useState(config.learning);
   const pipsField = (label: string, v: number, set: (n: number) => void, step = 1) => (
     <div className="irow" key={label}><span className="ilabel">{label}</span><input className="input mono" type="number" step={step} min={0} value={v} aria-label={label} onChange={(e) => set(Number(e.target.value))} /></div>
   );
@@ -174,6 +175,14 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
         {pipsField('Partial at profit (pips)', asst.rules.partial.atPips, (n) => setAsst({ ...asst, rules: { ...asst.rules, partial: { ...asst.rules.partial, atPips: n } } }))}
         {pipsField('Close this share (%)', asst.rules.partial.closePct, (n) => setAsst({ ...asst, rules: { ...asst.rules, partial: { ...asst.rules.partial, closePct: n } } }), 5)}
       </Section>
+      <Section title="Learning and memory (paper trades, tick recording, remembered chats)">
+        <span className="hint">Everything stays on this PC. Aurum does not retrain any AI model and does not change its own code; it measures results on real recorded prices and gives the AI a short summary to use.</span>
+        <div className="perm"><div><b>Record every price tick</b><span className="hint">Compact local history of bid/ask. Needed to judge paper trades and to test other stop/target values afterwards.</span></div><Switch label="Record ticks" checked={lrn.recordTicks} onChange={(v) => setLrn({ ...lrn, recordTicks: v })} /></div>
+        {pipsField('Keep ticks for (days)', lrn.retentionDays, (n) => setLrn({ ...lrn, retentionDays: Math.max(1, Math.min(730, Math.round(n))) }))}
+        {pipsField('Close a paper trade after (hours)', lrn.paperMaxHoldHours, (n) => setLrn({ ...lrn, paperMaxHoldHours: Math.max(1, Math.min(720, Math.round(n))) }))}
+        <div className="perm"><div><b>Remember my chats and notes</b><span className="hint">Saves every chat turn (app and WhatsApp) for later recall and sends a short digest of your saved notes and measured results to your AI provider with each request. Turn off to stop saving and sharing.</span></div><Switch label="Memory" checked={lrn.memory} onChange={(v) => setLrn({ ...lrn, memory: v })} /></div>
+        <div className="perm"><div><b>Apply data-backed default stop/target automatically</b><span className="hint">Only the DEFAULT stop and target for new plans, only when enough paper trades exist and the choice also beat your current values on trades it was not picked from. Never touches risk limits. Every change is logged and can be undone in the Learning tab.</span></div><Switch label="Auto tune defaults" checked={lrn.autoTune} onChange={(v) => setLrn({ ...lrn, autoTune: v })} /></div>
+      </Section>
       <Section title="Pre-trade checklist (shown before every new order)">
         <div className="perm"><div><b>Show the checklist on the order review page</b><span className="hint">Checks use real data. When data is missing (for example no calendar connected) the item says Unknown, never OK.</span></div><Switch label="Pre-trade checklist" checked={cl.enabled} onChange={(v) => setCl({ ...cl, enabled: v })} /></div>
         {cl.enabled && (
@@ -201,7 +210,7 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
           </>
         )}
       </Section>
-      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk, assistant: asst, checklist: { ...cl, manual: cl.manual.filter((m) => m.label.trim().length >= 2) } }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
+      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk, assistant: asst, learning: lrn, checklist: { ...cl, manual: cl.manual.filter((m) => m.label.trim().length >= 2) } }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
     </>
   );
 }

@@ -13,6 +13,7 @@ import { tickBriefing } from './briefingScheduler';
 import { AssistantService, SqlitePlanStore, describePlan } from './assistant';
 import { PaperService, SqlitePaperStore } from './paper';
 import { TickStore } from './ticks';
+import { MemoryService } from './memory';
 import { LearningService } from './learning';
 import { atLeast, closedTrades, composeBriefing, summarize, type AiView, type BriefingInput, type CalendarEvent, type NoTradeRule, type UserView } from '@aurum/core';
 import { kvGet, kvSet, closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
@@ -42,6 +43,7 @@ let watcher: ConnectionWatcher | null = null;
 let assistant: AssistantService | null = null;
 let paper: PaperService | null = null;
 let learning: LearningService | null = null;
+let memory: MemoryService | null = null;
 let tickStore: TickStore | null = null;
 let briefingTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -291,6 +293,20 @@ function registerIpc(): void {
     if (dup) return dup;
     return paper!.create({ id: `paper-${i.source}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, source: i.source, side: i.side, entry: i.entry, zone: i.zone, slPips: i.slPips, tpPips: i.tpPips, note: i.note });
   });
+  const memNote = z.object({ kind: z.enum(['lesson', 'preference', 'fact']), text: z.string().min(3).max(400), weight: z.number().int().min(1).max(5).default(3), source: z.enum(['user', 'ai', 'review']).default('ai') });
+  ipcMain.handle(IPC.memoryLog, (_e, raw: unknown) => { if (config.learning.memory) memory!.log(z.object({ channel: z.enum(['app', 'whatsapp']), role: z.enum(['user', 'assistant']), text: z.string().max(20_000) }).parse(raw)); });
+  ipcMain.handle(IPC.memoryRemember, (_e, raw: unknown) => memory!.remember(memNote.parse(raw)));
+  ipcMain.handle(IPC.memoryRecall, (_e, q: unknown, d: unknown) => memory!.recall(z.string().min(2).max(200).parse(q), z.number().int().min(1).max(3650).parse(d)));
+  ipcMain.handle(IPC.memoryNotes, () => memory!.notes());
+  ipcMain.handle(IPC.memoryForget, (_e, id: unknown) => memory!.forget(z.string().max(64).parse(id)));
+  ipcMain.handle(IPC.memoryClear, () => memory!.clear());
+  ipcMain.handle(IPC.memoryStats, () => memory!.stats());
+  ipcMain.handle(IPC.memoryDigest, () => {
+    if (!config.learning.memory) return '';
+    const l = learning!.insights();
+    const line = l.finished >= 8 ? l.findings.filter((f) => f.kind !== 'info').slice(0, 3).map((f) => f.text).join(' ') || `${l.finished} paper trades judged, no strong pattern yet.` : null;
+    return memory!.digest(line);
+  });
   ipcMain.handle(IPC.tickStats, () => tickStore!.stats());
   ipcMain.handle(IPC.ordersHistory, (_e, days: unknown) => orders.history(z.number().int().min(1).max(365).parse(days)));
   ipcMain.handle(IPC.ordersKill, (_e, on: unknown) => orders.engine.setKillSwitch(z.boolean().parse(on)));
@@ -349,6 +365,7 @@ else {
     registerWhatsAppIpc(ipcMain, wa, async () => wa.sendBriefing(composeBriefing(await briefingInput())));
     wa.start();
     tickStore = new TickStore(getDb);
+    memory = new MemoryService(getDb);
     tickStore.start();
     tickStore.purge(Date.now() - config.learning.retentionDays * 86_400_000);
     setInterval(() => tickStore?.purge(Date.now() - config.learning.retentionDays * 86_400_000), 6 * 3600_000).unref();

@@ -86,6 +86,14 @@ export interface AurumApi extends WhatsAppApi {
   learnApply(slPips: number, tpPips: number): Promise<AppConfig>;
   learnRevert(): Promise<{ ok: boolean; config: AppConfig }>;
   onConfigChanged(cb: (c: AppConfig) => void): () => void;
+  memoryLog(e: { channel: 'app' | 'whatsapp'; role: 'user' | 'assistant'; text: string }): Promise<void>;
+  memoryRemember(n: { kind: 'lesson' | 'preference' | 'fact'; text: string; weight: number; source?: 'user' | 'ai' | 'review' }): Promise<import('@aurum/core').MemoryNote>;
+  memoryRecall(query: string, days: number): Promise<{ notes: { kind: string; text: string }[]; chats: { when: string; channel: string; role: string; text: string }[] }>;
+  memoryNotes(): Promise<import('@aurum/core').MemoryNote[]>;
+  memoryForget(id: string): Promise<void>;
+  memoryClear(): Promise<void>;
+  memoryDigest(): Promise<string>;
+  memoryStats(): Promise<{ turns: number; notes: number; first: number | null }>;
   tickStats(): Promise<{ count: number; first: number | null; last: number | null; approxBytes: number }>;
   onPaperChanged(cb: () => void): () => void;
   ordersHistory(days: number): Promise<import('@aurum/core').BrokerDeal[]>;
@@ -141,7 +149,7 @@ export const IPC = {
   ordersReconcile: 'orders:reconcile',
   ordersKill: 'orders:kill',
   ordersHistory: 'orders:history',
-  paperList: 'paper:list', paperRecord: 'paper:record', learnInsights: 'learn:insights', learnApply: 'learn:apply', learnRevert: 'learn:revert', configChanged: 'config:changed', tickStats: 'ticks:stats', paperChanged: 'paper:changed',
+  paperList: 'paper:list', paperRecord: 'paper:record', learnInsights: 'learn:insights', learnApply: 'learn:apply', learnRevert: 'learn:revert', configChanged: 'config:changed', tickStats: 'ticks:stats', memoryLog: 'memory:log', memoryRemember: 'memory:remember', memoryRecall: 'memory:recall', memoryNotes: 'memory:notes', memoryForget: 'memory:forget', memoryClear: 'memory:clear', memoryDigest: 'memory:digest', memoryStats: 'memory:stats', paperChanged: 'paper:changed',
   assistList: 'assist:list', assistCreate: 'assist:create', assistApprove: 'assist:approve', assistCancel: 'assist:cancel', assistTake: 'assist:take', assistSkip: 'assist:skip', assistPips: 'assist:pips',
   assistEvent: 'assist:event', assistAsk: 'assist:ask', assistChanged: 'assist:changed',
   autoStartGet: 'app:autoStartGet',

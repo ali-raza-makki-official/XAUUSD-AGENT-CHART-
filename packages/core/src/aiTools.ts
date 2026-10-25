@@ -143,7 +143,16 @@ export interface ToolContext {
   plans?: PlansPort;
   /** Paper trading: records an idea so it is judged later on real ticks. Absent = ideas are not recorded. */
   paper?: { record(idea: { source: 'analysis' | 'user'; side: 'buy' | 'sell'; zone: { low: number; high: number }; slPips: number; tpPips: number | null; entry?: 'touch' | 'limit'; note?: string }): Promise<unknown> };
+  /** Long-term memory: notes and the archive of earlier chats. Absent = the tools report unavailable. */
+  memory?: MemoryPort;
   captureChart?: () => Promise<{ mime: string; data: string } | null>;
+}
+
+export interface MemoryPort {
+  remember(n: { kind: 'lesson' | 'preference' | 'fact'; text: string; weight: number }): Promise<{ id: string }>;
+  recall(query: string, days: number): Promise<{ notes: { kind: string; text: string }[]; chats: { when: string; channel: string; role: string; text: string }[] }>;
+  /** Measured paper-trading and recorded-tick statistics (null = nothing recorded yet). */
+  stats(): Promise<unknown>;
 }
 
 export interface PlansPort {
@@ -412,6 +421,35 @@ export const AI_TOOLS: AiTool[] = [
       const { net, grossWin, grossLoss, avgWin, avgLoss, expectancy, maxDrawdown, bestTrade, worstTrade, byHour, byWeekday, bySide, ...ratios } = s;
       return { ok: true, data: { days: input.days, ...ratios, behavior, moneyHidden: 'Money amounts are hidden (Settings > AI > share balance is off). Win/loss counts and ratios are real.',
         byHour: byHour.map((h) => ({ hour: h.hour, trades: h.trades })), byWeekday: byWeekday.map((w) => ({ weekday: w.weekday, trades: w.trades })), bySide: { buy: bySide.buy.trades, sell: bySide.sell.trades } } };
+    },
+  },
+  {
+    name: 'remember',
+    description: 'Save one lasting note about this trader so it is remembered on later days: a preference, a rule they follow, or a lesson from a trade. Keep it one short sentence. Do not save prices, today\'s levels, secrets or anything the user did not say or clearly show.',
+    input: z.object({ kind: z.enum(['lesson', 'preference', 'fact']), text: z.string().min(3).max(400), weight: z.number().int().min(1).max(5).default(3) }),
+    needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx, input: { kind: 'lesson' | 'preference' | 'fact'; text: string; weight: number }) {
+      if (!ctx.memory) return fail('unavailable', 'Memory is switched off (Settings > Learning).');
+      try { return { ok: true, data: { saved: true, ...(await ctx.memory.remember(input)) } }; } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+    },
+  },
+  {
+    name: 'recall_memory',
+    description: 'Search the saved notes and the archive of ALL earlier chats (app and WhatsApp, every day) by keywords. Use it when the user refers to something from before, or before giving advice that depends on their habits. Returns the best matches with dates; absence of results means nothing was found, not that it never happened.',
+    input: z.object({ query: z.string().min(2).max(200), days: z.number().int().min(1).max(3650).default(365) }),
+    needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx, input: { query: string; days: number }) {
+      if (!ctx.memory) return fail('unavailable', 'Memory is switched off (Settings > Learning).');
+      try { return { ok: true, data: await ctx.memory.recall(input.query, input.days) }; } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+    },
+  },
+  {
+    name: 'get_learning_stats',
+    description: 'Measured results of paper trades (every trade plan, AI trade idea and user idea judged on real recorded ticks, whether or not it was traded live): win rate and expectancy in pips by side, session, source and hour, plus a data-backed suggestion for default stop/target. Report sample sizes; with fewer than ~30 trades call it early evidence, not a conclusion.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx) {
+      if (!ctx.memory) return fail('unavailable', 'Learning is switched off (Settings > Learning).');
+      try { return { ok: true, data: (await ctx.memory.stats()) ?? { note: 'Nothing recorded yet.' } }; } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
     },
   },
   {

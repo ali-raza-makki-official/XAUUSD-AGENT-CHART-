@@ -1,3 +1,5 @@
+import { Splitter } from './Splitter';
+import { SIZE_LIMITS } from '../lib/panelSizes';
 import { useState, type ReactNode } from 'react';
 import { Maximize2, Minimize2, Bell, BookOpen, Briefcase, Globe2, ChevronDown, ChevronUp, History, ListChecks, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
@@ -21,12 +23,13 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull }: { full?: boolean; onFull?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
+export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull, height, onHeight, onResetHeight }: { full?: boolean; onFull?: () => void; height?: number; onHeight?: (h: number) => void; onResetHeight?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
   return (
     <section className="bottom" aria-label="Activity panel">
+      {open && !full && height !== undefined && onHeight && <Splitter orientation="h" label="Resize the bottom panel" value={height} min={SIZE_LIMITS.bottomH.min} max={Math.min(SIZE_LIMITS.bottomH.max, Math.round(window.innerHeight * 0.7))} grow="start" onChange={onHeight} onReset={() => onResetHeight?.()} />}
       <div className="btabs" role="tablist">
         {TABS.map((t) => (
           <button key={t.id} role="tab" className="btab" aria-selected={t.id === tab} onClick={() => { setTab(t.id); setOpen(true); }}>

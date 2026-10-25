@@ -1,4 +1,4 @@
-import { Activity, Columns2, Grid2x2, Link2, Square } from 'lucide-react';
+import { Activity, Columns2, Grid2x2, Link2, Maximize2, Minimize2, PanelRightOpen, Square } from 'lucide-react';
 import { LAYOUT_LABEL, type ChartLayout, type Timeframe } from '@aurum/core';
 import { Button, IconButton, Segmented } from './ui';
 
@@ -11,10 +11,14 @@ interface Props {
   activeTf: Timeframe;
   indicatorCount: number;
   onIndicators: () => void;
+  chartFull: boolean;
+  onChartFull: () => void;
+  rightHidden: boolean;
+  onShowRight: () => void;
 }
 
 /** Strip above the charts: indicators, layout and linked scrolling. Same functions the AI set_layout tool calls. */
-export function LayoutBar({ layout, onLayout, syncScroll, onSync, activePane, activeTf, indicatorCount, onIndicators }: Props) {
+export function LayoutBar({ layout, onLayout, syncScroll, onSync, activePane, activeTf, indicatorCount, onIndicators, chartFull, onChartFull, rightHidden, onShowRight }: Props) {
   const icon = (l: ChartLayout) => (l === 'single' ? <Square size={14} aria-hidden="true" /> : l === 'two' ? <Columns2 size={14} aria-hidden="true" /> : <Grid2x2 size={14} aria-hidden="true" />);
   return (
     <div className="chartstrip" role="toolbar" aria-label="Chart layout and indicators">
@@ -35,6 +39,10 @@ export function LayoutBar({ layout, onLayout, syncScroll, onSync, activePane, ac
           label: <>{icon(l)}<span className="sr-only">{LAYOUT_LABEL[l]}</span><span aria-hidden="true">{l === 'single' ? '1' : l === 'two' ? '2' : '4'}</span></>,
         }))}
       />
+      <IconButton label={chartFull ? 'Exit chart full screen (Esc)' : 'Chart full screen'} pos="bottom" onClick={onChartFull}>
+        {chartFull ? <Minimize2 size={16} strokeWidth={1.8} /> : <Maximize2 size={16} strokeWidth={1.8} />}
+      </IconButton>
+      {rightHidden && !chartFull && <IconButton label="Show the side panel" pos="bottom" onClick={onShowRight}><PanelRightOpen size={16} strokeWidth={1.8} /></IconButton>}
     </div>
   );
 }

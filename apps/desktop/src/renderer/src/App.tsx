@@ -6,6 +6,8 @@ import { ChartGrid } from './components/ChartGrid';
 import { LayoutBar } from './components/LayoutBar';
 import { IndicatorsDialog, IndicatorsPanel } from './components/Indicators';
 import { ChartSync } from './lib/chartSync';
+import { SIZE_LIMITS, usePanelSizes } from './lib/panelSizes';
+import { Splitter } from './components/Splitter';
 import { useDrawings } from './useDrawings';
 import { TopBar } from './components/TopBar';
 import { BottomPanel } from './components/Panels';
@@ -18,7 +20,7 @@ import { SettingsDialog } from './components/Settings';
 import { Toolbar } from './components/Toolbar';
 import { Activity, Bot, Layers, SlidersHorizontal } from 'lucide-react';
 import { IconButton } from './components/ui';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize2, Minimize2, PanelRightClose } from 'lucide-react';
 import { Inspector, InspectorEmpty } from './components/Inspector';
 import { ObjectsPanel } from './components/Objects';
 import { AlertToasts } from './components/AlertsPanel';
@@ -41,7 +43,8 @@ export function App() {
   const [selectedInd, setSelectedInd] = useState<string | null>(null);
   const [settings, setSettings] = useState<false | 'general' | 'ai' | 'trading'>(false);
   const [aiPaused, setAiPaused] = useState(false);
-  const [full, setFull] = useState<null | 'bottom' | 'right'>(null);
+  const [full, setFull] = useState<null | 'bottom' | 'right' | 'chart'>(null);
+  const sizes = usePanelSizes();
   useEffect(() => {
     if (!full) return;
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) setFull(null); };
@@ -111,7 +114,7 @@ export function App() {
   const pipSize = config?.pipSize ?? 0.1;
 
   return (
-    <div className={`app ${full ? `full-${full}` : ''}`}>
+    <div className={`app ${full ? `full-${full}` : ''} ${sizes.rightHidden ? 'right-hidden' : ''}`} style={{ '--chat-w': `${sizes.chatW}px`, '--bottom-h': `${sizes.bottomH}px` } as React.CSSProperties}>
       <TopBar config={config} tf={tf} onTf={pickTf} tick={tick} status={status} account={account} saveError={saveError} onSettings={() => setSettings('general')} aiPaused={aiPaused} aiRunning={chat.running} onToggleAi={() => setAiPaused((p) => !p)} />
       <Toolbar
         tool={tool} onTool={setTool}
@@ -123,6 +126,8 @@ export function App() {
         <LayoutBar
           layout={layout} onLayout={setLayout} syncScroll={config?.syncScroll ?? false} onSync={() => void update({ syncScroll: !(config?.syncScroll ?? false) })}
           activePane={activePane} activeTf={tf} indicatorCount={ind.indicators.length} onIndicators={() => setIndDialog(true)}
+          chartFull={full === 'chart'} onChartFull={() => setFull(full === 'chart' ? null : 'chart')}
+          rightHidden={sizes.rightHidden} onShowRight={() => sizes.setRightHidden(false)}
         />
         <ChartGrid
           layout={layout} tfs={tfs} activePane={activePane} sync={sync}
@@ -136,11 +141,13 @@ export function App() {
         />
       </main>
       <div className="rightcol">
+        {full !== 'right' && <Splitter orientation="v" label="Resize the side panel" value={sizes.chatW} min={SIZE_LIMITS.chatW.min} max={SIZE_LIMITS.chatW.max} grow="start" onChange={sizes.setChatW} onReset={() => sizes.setChatW(SIZE_LIMITS.chatW.def)} />}
         <div className="rtabs" role="tablist">
           <button role="tab" className="rtab" aria-selected={rightTab === 'chat'} onClick={() => setRightTab('chat')}><Bot size={15} />AI chat</button>
           <button role="tab" className="rtab" aria-selected={rightTab === 'objects'} onClick={() => setRightTab('objects')}><Layers size={15} />Objects <span className="count">{drawings.length}</span></button>
           <button role="tab" className="rtab" aria-selected={rightTab === 'inspector'} onClick={() => setRightTab('inspector')}><SlidersHorizontal size={15} />Inspector</button>
           <button role="tab" className="rtab" aria-selected={rightTab === 'indicators'} onClick={() => setRightTab('indicators')}><Activity size={15} />Indicators</button>
+          {full !== 'right' && <IconButton pos="left" label="Hide this panel" onClick={() => sizes.setRightHidden(true)}><PanelRightClose size={15} /></IconButton>}
           <IconButton pos="left" label={full === 'right' ? 'Exit full screen (Esc)' : 'Full screen'} onClick={() => setFull(full === 'right' ? null : 'right')}>{full === 'right' ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</IconButton>
         </div>
         <div className="rbody">
@@ -171,7 +178,7 @@ export function App() {
             : <InspectorEmpty />)}
         </div>
       </div>
-      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
+      <BottomPanel log={log} aiActions={store.history().filter((h) => h.actor === 'ai')} onUndoAllAi={() => { const d = new Date(); d.setHours(0, 0, 0, 0); store.revertActor('ai', d.getTime()); }} full={full === 'bottom'} onFull={() => setFull(full === 'bottom' ? null : 'bottom')} height={sizes.bottomH} onHeight={sizes.setBottomH} onResetHeight={() => sizes.setBottomH(SIZE_LIMITS.bottomH.def)} api={api} config={config} positions={api ? <PositionsPanel api={api} open={flow.open} onSettings={() => setSettings('trading')} /> : null} />
       <AlertToasts api={api} />
       {flow.dialog}
       {indDialog && <IndicatorsDialog onAdd={addIndicator} onClose={() => setIndDialog(false)} />}

@@ -11,6 +11,7 @@ import { IndicatorStore, IndicatorSchema, makeIndicator, indicatorTitle, outputS
 import { INDICATORS, INDICATOR_TYPES, computeIndicator, resolveParams, tailValues, warmupBars, type IndicatorType } from './indicators';
 import { ChartLayoutSchema, LAYOUT_PANES, clampPane, type ChartLayout } from './chartLayout';
 import { CONTEXT_TOOLS, type ContextAccess } from './contextTools';
+import { analyseStructure } from './structure';
 import { ORDER_TOOLS, type OrdersPort } from './orderTools';
 
 /**
@@ -250,6 +251,39 @@ export const AI_TOOLS: AiTool[] = [
       } catch (e) {
         return fail('unavailable', e instanceof Error ? e.message : String(e));
       }
+    },
+  },
+  {
+    name: 'find_zones',
+    description: 'Detect real market structure on the live MT5 candles: fair value gaps (FVG), swing highs/lows, liquidity pools (equal highs/lows), order blocks and candlestick patterns. Every item has exact candle times and prices computed from data. When drawing zones or levels, use these times/prices only; never invent a level. Items are heuristics, not trade signals; say so if asked.',
+    input: z.object({
+      timeframe: TimeframeSchema.optional(),
+      count: z.number().int().min(50).max(500).default(300),
+      include: z.array(z.enum(['fvg', 'swings', 'liquidity', 'order_blocks', 'patterns'])).optional().describe('Default: all.'),
+      onlyActive: z.boolean().default(true).describe('Hide filled FVGs, swept liquidity/swings and mitigated order blocks.'),
+      limit: z.number().int().min(1).max(30).default(10).describe('Max items per group, most recent first.'),
+    }),
+    needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx, input: { timeframe?: Timeframe; count: number; include?: string[]; onlyActive: boolean; limit: number }) {
+      const tf = input.timeframe ?? ctx.getState().timeframe;
+      let c: Candle[];
+      try { c = await ctx.getCandles(tf, input.count); } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+      if (c.length < 20) return fail('unavailable', 'Not enough real candles to analyse.');
+      let sum = 0; for (const k of c) sum += k.high - k.low;
+      const avg = sum / c.length;
+      const r = analyseStructure(c, { equalTolerance: avg * 0.1, minGap: avg * 0.1 });
+      const want = (g: string) => !input.include || input.include.includes(g);
+      const recent = <T extends { time?: number; endTime?: number }>(a: T[]) => a.slice(-input.limit).reverse();
+      const act = input.onlyActive;
+      return { ok: true, data: {
+        timeframe: tf, candlesAnalysed: c.length, from: c[0]!.time, to: c[c.length - 1]!.time,
+        note: 'Computed from real candles with fixed rules. Heuristics, not signals.',
+        ...(want('fvg') ? { fvgs: recent(r.fvgs.filter((x) => !act || x.status !== 'filled')) } : {}),
+        ...(want('swings') ? { swings: recent(r.swings.filter((x) => !act || !x.swept)) } : {}),
+        ...(want('liquidity') ? { liquidity: r.liquidity.filter((x) => !act || !x.swept).slice(-input.limit).reverse() } : {}),
+        ...(want('order_blocks') ? { orderBlocks: recent(r.orderBlocks.filter((x) => !act || !x.mitigated)) } : {}),
+        ...(want('patterns') ? { patterns: recent(r.patterns) } : {}),
+      } };
     },
   },
   {

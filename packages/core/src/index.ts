@@ -31,3 +31,4 @@ export * from './orderEngine';
 export * from './orderPlan';
 export * from './orderTools';
 export * from './positionSync';
+export * from './structure';

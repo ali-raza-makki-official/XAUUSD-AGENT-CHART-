@@ -29,6 +29,7 @@ export interface WaUiSettings {
   permission: WaPermissionLevel;
   confirmChartActions: boolean;
   notifications: boolean;
+  statusNotices: boolean;
   quietHours: WaQuietHours;
 }
 export type WaUiSettingsPatch = Partial<Omit<WaUiSettings, "quietHours">> & { quietHours?: Partial<WaQuietHours> };

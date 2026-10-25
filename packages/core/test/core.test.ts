@@ -100,7 +100,7 @@ describe('defaults are on the safe side', () => {
   });
 });
 
-import { barStart, nextBarStart, TIMEFRAMES, TIMEFRAME_SECONDS } from '../src';
+import { nextBarStart, TIMEFRAMES, TIMEFRAME_SECONDS } from '../src';
 
 describe('all MT5 timeframes', () => {
   it('has a length for every period and aligns bars like MT5', () => {

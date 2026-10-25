@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
-import { TimeframeSchema, type AppConfig } from '@aurum/core';
+import { TimeframeSchema, type AppConfig, type FeedStatus } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
 import { makeTranscriber, voiceRoute } from './transcribe';
+import { ConnectionWatcher } from './connectionWatch';
 import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
 import * as db from './db';
@@ -31,6 +32,7 @@ const bridge = new BridgeManager();
 let hub: ContextHub;
 let alerts: AlertService;
 let wa: WhatsAppService;
+let watcher: ConnectionWatcher | null = null;
 let orders: OrderService;
 let eaHub: EaHub | null = null;
 
@@ -256,6 +258,9 @@ else {
     });
     registerWhatsAppIpc(ipcMain, wa);
     wa.start();
+    watcher = new ConnectionWatcher({ notify: (text, priority) => { void wa?.notifyStatus(text, priority); } });
+    bridge.on('status', (st: FeedStatus) => watcher?.onStatus(st));
+    setTimeout(() => { void wa?.notifyStatus('Aurum started on your PC. It connects to MT5 by itself when the AurumBridge EA is running.', 'low'); }, 8000);
     createWindow();
     startBackups(join(app.getPath('userData'), 'aurum.db'), join(app.getPath('userData'), 'backups'));
     void initAutoUpdate(); // no-op unless AUTO_UPDATE_ENABLED is flipped (see updater.ts)
@@ -263,7 +268,16 @@ else {
     await startFeed();
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', () => {
+  let quitting = false;
+  app.on('before-quit', (e) => {
+    // Tell WhatsApp that Aurum is closing (best effort, 3 s at most), then quit for real.
+    if (!quitting && wa) {
+      e.preventDefault();
+      quitting = true;
+      watcher?.dispose();
+      void wa.notifyStatus('Aurum was closed on your PC. Alerts and the AI stop until you open it again; MT5 positions are not touched.', 'normal', 3000).finally(() => app.quit());
+      return;
+    }
     hub?.stop();
     alerts?.stop();
     void wa?.stop();

@@ -41,6 +41,8 @@ export const WhatsAppSettingsSchema = z.object({
   summariseBacklog: z.boolean().default(true),
   /** Send alerts and notifications to WhatsApp. */
   notifications: z.boolean().default(true),
+  /** Tell me on WhatsApp when Aurum starts or closes and when the MT5 connection drops or comes back. */
+  statusNotices: z.boolean().default(true),
 });
 export type WhatsAppSettings = z.infer<typeof WhatsAppSettingsSchema>;
 export const DEFAULT_WHATSAPP_SETTINGS: WhatsAppSettings = WhatsAppSettingsSchema.parse({});

@@ -51,7 +51,7 @@ const QuietSchema = z.object({
   tz: z.string().min(1).max(64).default('UTC'), allowCritical: z.boolean().default(true),
 });
 export const WaUiSettingsPatchSchema = z.object({
-  enabled: z.boolean(), permission: z.enum(['notify', 'ask', 'chart', 'trade']), confirmChartActions: z.boolean(), notifications: z.boolean(),
+  enabled: z.boolean(), permission: z.enum(['notify', 'ask', 'chart', 'trade']), confirmChartActions: z.boolean(), notifications: z.boolean(), statusNotices: z.boolean(),
   quietHours: QuietSchema.partial(),
 }).partial();
 
@@ -107,7 +107,7 @@ export class WhatsAppService {
   }
   uiSettings(): WaUiSettings {
     const s = this.settings();
-    return { enabled: s.enabled, permission: s.permission, confirmChartActions: s.confirmChartActions, notifications: s.notifications, quietHours: this.quietHours() };
+    return { enabled: s.enabled, permission: s.permission, confirmChartActions: s.confirmChartActions, notifications: s.notifications, statusNotices: s.statusNotices, quietHours: this.quietHours() };
   }
   setUiSettings(raw: unknown): WaUiSettings {
     const p = WaUiSettingsPatchSchema.parse(raw);
@@ -259,6 +259,20 @@ export class WhatsAppService {
       return res.ok ? { status: 'confirmed', text: res.text } : { status: 'failed', text: res.error ?? res.text ?? 'The chart action failed.' };
     },
   };
+
+  /**
+   * App and connection status messages ("Aurum closed", "MT5 connection lost"). Best effort: they only go out while
+   * this process is alive, so a crash, a power cut or a force kill cannot announce itself.
+   */
+  async notifyStatus(text: string, priority: 'critical' | 'normal' | 'low' = 'normal', waitMs = 4000): Promise<boolean> {
+    const s = this.settings();
+    if (!s.enabled || !s.notifications || !s.statusNotices || this.d.store.getLink().status !== 'linked') return false;
+    const q = this.quietHours();
+    if (inQuietHours(q, this.now()) && !(priority === 'critical' && q.allowCritical)) return false;
+    const send = this.gateway.send({ id: randomUUID(), kind: 'alert_hit', priority, text: text.slice(0, 1000), dedupeKey: `status:${text.slice(0, 40)}`, createdAt: this.now() })
+      .then((r) => r.status === 'sent', () => false);
+    return Promise.race([send, new Promise<boolean>((r) => setTimeout(() => r(false), waitMs))]);
+  }
 
   // ----- outbound notifications -----------------------------------------------------------------
 

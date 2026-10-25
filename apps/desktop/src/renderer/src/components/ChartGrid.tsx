@@ -53,9 +53,9 @@ function ChartPane({ paneId, tf, multi, active, feed, view, sync, onActivate, on
               <>
                 <p>No price data is shown until a real MT5 feed is connected.</p>
                 <ol>
-                  <li>Open the MT5 terminal from Exness and log in to your demo account.</li>
-                  <li>Make sure gold ({brokerSymbol}) is in Market Watch.</li>
-                  <li>If the symbol name differs, change it in Settings.</li>
+                  <li>Open the MT5 terminal and log in to your demo account.</li>
+                  <li>Attach the AurumBridge EA to any chart. Settings &gt; General shows the HubPort and AuthToken for its inputs.</li>
+                  <li>Check that gold ({brokerSymbol}) is the name your broker uses (Exness: XAUUSDm) in Settings &gt; General.</li>
                 </ol>
                 <p className="err">{status.message}</p>
                 <Button variant="primary" onClick={() => void api.reconnect()}>Retry connection</Button>

@@ -44,15 +44,11 @@ async function ensureEaHub(): Promise<EaHub> {
   return eaHub;
 }
 
-/** Starts the MT5 connection the user chose: the Python bridge, or the EA hub that mimics its HTTP interface. */
+/** Starts the MT5 connection: the EA hub, and the poller that reads it. */
 async function startFeed(): Promise<void> {
-  if (config.mt5Mode === 'ea') {
-    const hub = await ensureEaHub();
-    hub.config(config.brokerSymbol, config.trading.enabled);
-    await bridge.start(config.brokerSymbol, '', config.trading.enabled, { port: hub.httpPort, token: hub.httpToken });
-  } else {
-    await bridge.start(config.brokerSymbol, config.mt5Path, config.trading.enabled);
-  }
+  const hub = await ensureEaHub();
+  hub.config(config.brokerSymbol, config.trading.enabled);
+  await bridge.start({ port: hub.httpPort, token: hub.httpToken });
 }
 let win: BrowserWindow | null = null;
 
@@ -107,8 +103,6 @@ function registerIpc(): void {
     const allowed = z
       .object({
         brokerSymbol: z.string().min(1).max(32),
-        mt5Path: z.string().max(400),
-        mt5Mode: z.enum(['python', 'ea']),
         trading: z.object({ enabled: z.boolean() }),
         risk: RiskSettingsSchema,
         pipSize: z.number().positive(),
@@ -126,7 +120,7 @@ function registerIpc(): void {
       })
       .partial()
       .parse(patch);
-    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.mt5Path !== undefined && allowed.mt5Path !== config.mt5Path) || (allowed.trading !== undefined && allowed.trading.enabled !== config.trading.enabled) || (allowed.mt5Mode !== undefined && allowed.mt5Mode !== config.mt5Mode);
+    const symbolChanged = (allowed.brokerSymbol !== undefined && allowed.brokerSymbol !== config.brokerSymbol) || (allowed.trading !== undefined && allowed.trading.enabled !== config.trading.enabled);
     config = saveConfig(allowed, config);
     if (allowed.context) hub.sync();
     if (symbolChanged) await startFeed();

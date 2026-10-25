@@ -1,6 +1,5 @@
 // electron-builder configuration for Aurum (Windows x64 NSIS installer).
-// See docs/RELEASING.md. The Python bridge is frozen to resources/bridge/aurum-bridge.exe by PyInstaller
-// BEFORE this runs (CI does it; locally: `npm run bridge:exe` from the repo root on Windows).
+// See docs/RELEASING.md. MT5 connects through the AurumBridge EA (no bundled helper process).
 const path = require('node:path');
 
 // Fuses are security switches burned into the Electron binary. scripts/verify-fuses.mjs and
@@ -28,10 +27,8 @@ const config = {
   // package.json has a semver range; electron-builder needs the exact installed version.
   electronVersion: require('electron/package.json').version,
   asar: true,
-  // The frozen bridge sits OUTSIDE the asar so Windows can execute it.
   // The Linux binary name is only there for the non-Windows --dir smoke build. The Windows build requires the .exe
   // (enforced by the release workflow before packaging).
-  extraResources: [{ from: 'resources/bridge', to: 'bridge', filter: ['aurum-bridge.exe', 'aurum-bridge'] }],
   electronFuses,
   // Auto-update feed. The updater code is DISABLED by default (src/main/updater.ts), this only tells
   // electron-builder where releases live and writes resources/app-update.yml.

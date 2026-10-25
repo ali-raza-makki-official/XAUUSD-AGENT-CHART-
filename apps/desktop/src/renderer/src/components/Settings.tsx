@@ -156,11 +156,14 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
   const [tab, setTab] = useState<TabId>(initialTab);
   const [symbol, setSymbol] = useState(config.brokerSymbol);
   const [pip, setPip] = useState(String(config.pipSize));
-  const [mt5Path, setMt5Path] = useState(config.mt5Path);
-  const [mode, setMode] = useState<'python' | 'ea'>(config.mt5Mode);
   const [copied, setCopied] = useState(false);
   const [ea, setEa] = useState<{ port: number; token: string; connected: boolean } | null>(null);
-  useEffect(() => { if (mode === 'ea') void api.eaInfo().then(setEa).catch(() => setEa(null)); }, [mode, api]);
+  useEffect(() => {
+    const load = () => void api.eaInfo().then(setEa).catch(() => setEa(null));
+    load();
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [api]);
   const [found, setFound] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [styles, setStyles] = useState<Record<string, Style>>(() =>
@@ -212,24 +215,20 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
                 {err && <Chip tone="warn">{err}</Chip>}
               </div>
               <div className="field">
-                <label>How Aurum connects to MT5</label>
-                <Segmented<'python' | 'ea'> label="MT5 connection" size="sm" value={mode} onChange={setMode} options={[{ value: 'python', label: 'Python bridge (tested)' }, { value: 'ea', label: 'EA bridge (new, untested)' }]} />
-                {mode === 'ea' && (
-                  <div className="calc mono">
-                    <div>In MT5: compile and attach <b>AurumBridge.mq5</b> (bridge/mql5) to any chart, tick "Allow algorithmic trading", and add http://127.0.0.1 under Tools &gt; Options &gt; Expert Advisors.</div>
-                    <div>HubHost 127.0.0.1 · HubPort {ea?.port ?? '…'}</div>
-                    <div className="row" style={{ gap: 8 }}>AuthToken <b style={{ userSelect: 'text' }}>{ea?.token ?? '…'}</b>
-                      <Button size="sm" disabled={!ea} onClick={() => { void navigator.clipboard.writeText(ea!.token).then(() => setCopied(true)); }}>{copied ? 'Copied' : 'Copy token'}</Button>
-                    </div>
-                    <div>{ea?.connected ? 'EA connected.' : 'EA not connected yet.'}</div>
+                <label>Connect MT5 (AurumBridge EA)</label>
+                <div className="calc">
+                  <div className="row" style={{ gap: 8 }}>{ea?.connected ? <Chip tone="ok" icon={CircleCheck}>EA connected</Chip> : <Chip tone="warn">EA not connected yet</Chip>}</div>
+                  <ol style={{ margin: '8px 0 0', paddingLeft: 18, display: 'grid', gap: 4 }}>
+                    <li>In MT5, compile <b>bridge/mql5/AurumBridge.mq5</b> in MetaEditor and attach it to any chart.</li>
+                    <li>MT5 &gt; Tools &gt; Options &gt; Expert Advisors: tick "Allow algorithmic trading" and add <span className="mono">http://127.0.0.1</span> to the allowed URLs.</li>
+                    <li>In the EA inputs set <b>HubPort</b> to <span className="mono">{ea?.port ?? '…'}</span> and <b>AuthToken</b> to the token below.</li>
+                  </ol>
+                  <div className="row mono" style={{ gap: 8, marginTop: 8 }}>
+                    <span>Token</span><b style={{ userSelect: 'text' }}>{ea?.token ?? '…'}</b>
+                    <Button size="sm" disabled={!ea} onClick={() => { void navigator.clipboard.writeText(ea!.token).then(() => setCopied(true)); }}>{copied ? 'Copied' : 'Copy token'}</Button>
                   </div>
-                )}
-                <span className="hint">Save to switch. The EA only streams data until you set EnableTrading=true in its inputs; Aurum's risk rules and Confirm dialogs apply either way. Pending orders are not supported over the EA yet.</span>
-              </div>
-              <div className="field">
-                <label htmlFor="mt5path">MT5 terminal path (optional)</label>
-                <input id="mt5path" className="input mono" placeholder="Auto-detect (e.g. C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe)" value={mt5Path} onChange={(e) => setMt5Path(e.target.value)} />
-                <span className="hint">Leave empty to attach to the open terminal. Set it if you have several MT5 installs or see "Authorization failed". Open MT5 and log in first.</span>
+                </div>
+                <span className="hint">The EA only streams data until you set EnableTrading=true in its inputs. Aurum's risk rules and Confirm dialogs apply either way. Pending orders are not supported yet.</span>
               </div>
               <div className="field">
                 <label htmlFor="pip">Pip size (price units)</label>
@@ -268,7 +267,7 @@ export function SettingsDialog({ api, config, onSave, onClose, initialTab = 'gen
         </div></div>
         <div className="dialog-f">
           <Button onClick={onClose}>{tab === 'ai' || tab === 'connectors' || tab === 'whatsapp' ? 'Close' : 'Cancel'}</Button>
-          {tab !== 'ai' && tab !== 'connectors' && tab !== 'trading' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), mt5Path: mt5Path.trim(), mt5Mode: mode, pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
+          {tab !== 'ai' && tab !== 'connectors' && tab !== 'trading' && tab !== 'whatsapp' &&<Button variant="primary" disabled={!valid} onClick={async () => { await onSave({ brokerSymbol: symbol.trim(), pipSize: pipNum, toolStyles: styles }); onClose(); }}>Save</Button>}
         </div>
       </div>
     </div>

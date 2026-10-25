@@ -1,26 +1,18 @@
 # AurumBridge.mq5: optional EA bridge
 
 `bridge/mql5/AurumBridge.mq5` is an Expert Advisor modelled on the "Arbitrage Bridge" example: it runs inside MT5, connects out to
-a loopback WebSocket server and streams data / executes commands. It is an ALTERNATIVE to the Python bridge, not a replacement.
+a loopback WebSocket server and streams data / executes commands. It is the ONLY MT5 bridge: the Python bridge was removed.
 
-## Status: read this first
-- **The app side is built** (`apps/desktop/src/main/eaHub.ts`): a loopback WebSocket hub that the EA connects to, token-checked, which
-  re-exposes the EA through the same local HTTP interface as the Python bridge. Chart, orders, alerts and risk gate are unchanged.
-  Settings > General > "How Aurum connects to MT5" switches between "Python bridge" and "EA bridge" and shows the HubPort and AuthToken to paste into the EA.
-- Checked in real Electron against a **Node stand-in that speaks the protocol** (not the real EA): connect, candles, DEMO account, live
-  bid, positions, SL modify through the Confirm dialog, wrong token rejected.
-- **The EA file itself (`bridge/mql5/AurumBridge.mq5`) has never been compiled or run.** There is no MetaEditor in the build environment. Expect
-  to fix a compiler message or two, then test on a DEMO account. The Python bridge stays the default and is the tested path.
-- Not supported over the EA yet: pending orders (open_pending, cancel_pending) and pending-order lists. Reconciliation after an unknown
-  result uses the EA's `find` (position/deal tag lookup) and may stay "inconclusive" more often than with the Python bridge.
-
-## Why have it
-| | Python bridge (today) | EA bridge |
-|---|---|---|
-| Python on the PC | needed (or the frozen exe) | not needed |
-| Ticks | polled every 500 ms | pushed on every tick |
-| Needs an EA on a chart + Algo Trading on | no | yes |
-| Candle history, spec, deals, order lookup | yes | yes (same data, see protocol) |
+## Status
+- App side (`apps/desktop/src/main/eaHub.ts`): a loopback WebSocket hub the EA connects to (token-checked). It re-exposes the EA through a local
+  HTTP interface that the chart, order engine, alerts and connectors read. Settings > General shows HubPort and AuthToken.
+- Checked in real Electron against a Node stand-in that speaks the protocol: connect, candles, DEMO account, live bid, positions, SL modify through
+  the Confirm page, related-market quotes route, wrong token rejected, wrong gold symbol explained.
+- The EA compiled and connected on the owner's Windows PC (Journal: "connected to Aurum"). Not yet verified against a real broker: order
+  filling modes, retcodes, comment kept on closing deals, hedging vs netting.
+- Not supported: pending orders and pending-order lists. Reconciliation after an unknown result uses the EA's `find` and may stay
+  "inconclusive" more often.
+- Common mistake: the broker's gold symbol is not `GOLD` (Exness: `XAUUSDm`). Set it in Settings > General; the app lists the real names when it cannot find one.
 
 ## Safety defaults in the EA
 - `EnableTrading=false`: it only streams data until you switch it on.
@@ -40,7 +32,7 @@ EA to Aurum:
 - Replies carry the request's `req_id`: `candles` {data:[[time,o,h,l,c,tick_volume],...]}, `spec`, `symbols`, `deals`, `find` {found,where,ticket}, `order_result` {status,retcode,message,ticket,price,volume,duplicate}.
 
 Aurum to EA: `ping`, `subscribe` {symbols}, `candles` {req_id,symbol,tf,count<=5000}, `spec` {req_id,symbol}, `symbols` {req_id,q},
-`deals` {req_id,since}, `find` {req_id,command_id}, `positions`, `open` {req_id,command_id,symbol,side,volume,sl,tp,deviation},
+`quotes` {req_id,symbols}, `deals` {req_id,since}, `find` {req_id,command_id}, `positions`, `open` {req_id,command_id,symbol,side,volume,sl,tp,deviation},
 `modify` {req_id,ticket,sl?,tp?}, `close` {req_id,command_id,ticket,volume?}.
 
 Times are the broker server clock (unix seconds), same as the Python bridge and the MT5 chart.

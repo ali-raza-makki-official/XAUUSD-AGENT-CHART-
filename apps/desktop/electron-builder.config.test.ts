@@ -28,7 +28,7 @@ describe('electron-builder config', () => {
     expect(config.fileAssociations).toEqual([]);
   });
 
-  it('ships the frozen bridge outside the asar', () => {
-    expect(config.extraResources).toEqual([{ from: 'resources/bridge', to: 'bridge', filter: ['aurum-bridge.exe', 'aurum-bridge'] }]);
+  it('does not bundle any helper executable (MT5 talks to the app through the EA)', () => {
+    expect(config.extraResources ?? []).toEqual([]);
   });
 });

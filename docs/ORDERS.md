@@ -1,3 +1,5 @@
+> **Update:** orders now go through the AurumBridge EA (`docs/MQL5_BRIDGE.md`). The Python `trading.py` described below was removed; pending orders are not supported over the EA.
+
 # Orders: status and design (INCOMPLETE, DEMO ONLY)
 
 ## What exists and is tested (stand-in MT5 only)

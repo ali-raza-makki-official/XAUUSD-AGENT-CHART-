@@ -8,6 +8,3 @@ __pycache__/
 apps/desktop/out/
 .claude/worktrees/
 apps/desktop/release/
-apps/desktop/resources/bridge/
-bridge/build/
-*.spec

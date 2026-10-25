@@ -1,9 +1,3 @@
-import { app } from 'electron';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { createServer } from 'node:net';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import {
   AccountInfoSchema,
@@ -23,41 +17,14 @@ const TICK_POLL_MS = 500;
 const ACCOUNT_POLL_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      srv.close(() => (addr && typeof addr === 'object' ? resolve(addr.port) : reject(new Error('no port'))));
-    });
-  });
-}
-
-function bridgeDir(): string {
-  const packaged = join(process.resourcesPath ?? '', 'bridge');
-  return app.isPackaged && existsSync(packaged) ? packaged : join(app.getAppPath(), '..', '..', 'bridge');
-}
-
-/** Packaged: the PyInstaller-frozen exe in resources/bridge (no Python needed). Dev: python -m aurum_bridge. */
-function bridgeCommand(): { cmd: string; args: string[]; label: string } {
-  if (app.isPackaged) {
-    const exe = join(bridgeDir(), process.platform === 'win32' ? 'aurum-bridge.exe' : 'aurum-bridge');
-    return { cmd: exe, args: [], label: 'bundled bridge' };
-  }
-  const python = process.env.AURUM_PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
-  return { cmd: python, args: ['-m', 'aurum_bridge'], label: `Python (${python}). Install Python 3 or set AURUM_PYTHON` };
-}
-
 interface BridgeEvents {
   tick: [Tick];
   status: [FeedStatus];
   account: [AccountInfo | null];
 }
 
-/** Starts the Python MT5 bridge, polls it, and reports real feed state. Never produces data itself. */
+/** Polls the local EA hub (eaHub.ts) and reports real feed state. Never produces data itself. */
 export class BridgeManager extends EventEmitter<BridgeEvents> {
-  private proc: ChildProcess | null = null;
   private port = 0;
   private token = '';
   private timer: NodeJS.Timeout | null = null;
@@ -70,47 +37,16 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   lastTick: Tick | null = null;
   account: AccountInfo | null = null;
 
-  async start(brokerSymbol: string, mt5Path = '', trading = false, external?: { port: number; token: string }): Promise<void> {
+  /** Begin polling the hub's local HTTP interface. The hub reports "EA not connected" until the MT5 EA registers. */
+  async start(hub: { port: number; token: string }): Promise<void> {
     await this.stop();
     const gen = ++this.generation;
-    this.setStatus({ state: 'starting', message: external ? 'Waiting for the MT5 EA…' : 'Starting MT5 bridge…' });
-    this.port = external ? external.port : await freePort();
-    this.token = external ? external.token : randomBytes(24).toString('hex'); // per-launch secret, never exposed to the renderer
-    if (!external) this.spawnBridge(gen, brokerSymbol, mt5Path, trading);
+    this.setStatus({ state: 'starting', message: 'Waiting for the MT5 EA…' });
+    this.port = hub.port;
+    this.token = hub.token;
     this.timer = setInterval(() => void this.pollTick(gen), TICK_POLL_MS);
     this.accountTimer = setInterval(() => void this.pollAccount(gen), ACCOUNT_POLL_MS);
     void this.pollAccount(gen);
-  }
-
-  private spawnBridge(gen: number, brokerSymbol: string, mt5Path: string, trading: boolean): void {
-    const { cmd, args, label } = bridgeCommand();
-    const proc = spawn(cmd, args, {
-      cwd: bridgeDir(),
-      env: {
-        ...process.env,
-        AURUM_TOKEN: this.token,
-        AURUM_PORT: String(this.port),
-        AURUM_SYMBOL: brokerSymbol,
-        ...(mt5Path ? { AURUM_MT5_PATH: mt5Path } : {}),
-        // Trading endpoints exist only when the user enabled them. AURUM_ALLOW_LIVE is never set by the app: live accounts stay refused.
-        ...(trading ? { AURUM_TRADING: '1' } : { AURUM_TRADING: '' }),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    this.proc = proc;
-    let stderr = '';
-    proc.stderr?.on('data', (d) => (stderr = (stderr + String(d)).slice(-500)));
-    proc.on('error', (e) => {
-      if (gen === this.generation) {
-        this.setStatus({ state: 'error', message: `Cannot start ${label}: ${e.message}.` });
-      }
-    });
-    proc.on('exit', (code) => {
-      if (gen === this.generation && this.proc === proc) {
-        this.setStatus({ state: 'error', message: `MT5 bridge stopped (code ${code}). ${stderr.trim()}` });
-      }
-    });
   }
 
   async stop(): Promise<void> {
@@ -118,9 +54,6 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
     if (this.timer) clearInterval(this.timer);
     if (this.accountTimer) clearInterval(this.accountTimer);
     this.timer = this.accountTimer = null;
-    const p = this.proc;
-    this.proc = null;
-    if (p && !p.killed) p.kill();
     this.lastTick = null;
     this.lastTickTime = 0;
   }

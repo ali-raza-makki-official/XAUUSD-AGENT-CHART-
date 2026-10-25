@@ -475,6 +475,35 @@ void DoSpec(const string json)
           ",\"freezeLevel\":" + IntegerToString((int)SymbolInfoInteger(sym, SYMBOL_TRADE_FREEZE_LEVEL)) + "}");
   }
 
+void DoQuotes(const string json)
+  {
+   string rid = JStr(json, "req_id");
+   string syms[];
+   int n = JStrArray(json, "symbols", syms);
+   string list = "";
+   for(int i = 0; i < n && i < 20; i++)
+     {
+      string s = syms[i];
+      string item;
+      MqlTick t;
+      if(!SymbolSelect(s, true))
+         item = "{\"symbol\":\"" + Esc(s) + "\",\"ok\":false,\"error\":\"Symbol '" + Esc(s) + "' not found on this broker.\"}";
+      else if(!SymbolInfoTick(s, t) || (t.bid == 0 && t.ask == 0))
+         item = "{\"symbol\":\"" + Esc(s) + "\",\"ok\":false,\"error\":\"No tick for '" + Esc(s) + "' (market closed or no data).\"}";
+      else
+        {
+         int digits = (int)SymbolInfoInteger(s, SYMBOL_DIGITS);
+         MqlRates d[];
+         string prev = "null";
+         if(CopyRates(s, PERIOD_D1, 0, 2, d) == 2) prev = Num(d[0].close, digits);
+         item = "{\"symbol\":\"" + Esc(s) + "\",\"ok\":true,\"bid\":" + Num(t.bid, digits) + ",\"ask\":" + Num(t.ask, digits) +
+                ",\"time\":" + DoubleToString((double)t.time_msc / 1000.0, 3) + ",\"prevClose\":" + prev + ",\"error\":null}";
+        }
+      list += (i > 0 ? "," : "") + item;
+     }
+   WsSend("{\"action\":\"quotes\",\"req_id\":\"" + Esc(rid) + "\",\"ok\":true,\"list\":[" + list + "]}");
+  }
+
 void DoSymbols(const string json)
   {
    string rid = JStr(json, "req_id"), q = JStr(json, "q");
@@ -668,6 +697,7 @@ void HandleMessage(const string json)
    else if(action == "candles")   DoCandles(json);
    else if(action == "spec")      DoSpec(json);
    else if(action == "symbols")   DoSymbols(json);
+   else if(action == "quotes")    DoQuotes(json);
    else if(action == "deals")     DoDeals(json);
    else if(action == "find")      DoFind(json);
    else if(action == "positions") SendPositions(true);

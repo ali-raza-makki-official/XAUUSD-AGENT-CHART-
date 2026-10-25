@@ -1,3 +1,5 @@
+> **Update:** the Python bridge, PyInstaller step and `aurum-bridge.exe` were removed. MT5 connects through the AurumBridge EA, so the installer bundles no helper process. Ignore any section below that mentions them.
+
 # Releasing Aurum (Windows installer)
 
 Status honesty: the Windows `.exe`, the PyInstaller + `MetaTrader5` step and the NSIS uninstaller were **not built or run

@@ -22,13 +22,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
-      - name: Tests (core, desktop main process, python bridge)
+      - name: Tests (core, desktop main process)
         run: npm test
       - name: Build (electron-vite)
         run: npm run build

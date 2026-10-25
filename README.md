@@ -1,6 +1,6 @@
 # Aurum
 
-AI-controlled XAUUSD trading workspace for Windows. Real MT5 data only: no simulated or demo feed is built in.
+AI-controlled XAUUSD trading workspace for Windows. Real MT5 data only (through the AurumBridge EA): no simulated or demo feed is built in.
 Plan and design: `docs/PRODUCT_PROFILE.md`. Design tokens: `design/`.
 
 ## Status
@@ -20,25 +20,27 @@ Orders (demo only, wired this session; checked in a real Electron run against th
 - AI orders: only when Settings > AI > "Orders by the AI" is set to Confirm (needs trading enabled). The AI prepares a PREVIEW (`propose_order_action`); you press Confirm; the risk gate runs again. In Suggest mode the tool is not offered at all. Bulk close is never available to the AI. Stop AI sets the kill switch.
 - Run the manual test plan in `docs/ORDERS.md` on an Exness DEMO account before trusting any of it.
 
-Optional EA bridge (`bridge/mql5/AurumBridge.mq5`, `docs/MQL5_BRIDGE.md`): the app-side hub and the Settings switch are built and were checked against a protocol stand-in; the EA file itself has NOT been compiled or run.
+MT5 connection: the **AurumBridge EA** (`bridge/mql5/AurumBridge.mq5`, `docs/MQL5_BRIDGE.md`) is the only bridge. The app side (WebSocket hub, orders, quotes) was checked against a protocol stand-in and the EA compiled and connected on the owner's PC; real broker retcodes, filling modes and pending orders are not verified. The old Python bridge was removed.
 
 The Windows installer and CI are configured but have never run on Windows (`docs/RELEASING.md`).
 
 ## Run on Windows (development)
-1. Install the MT5 terminal from your broker (Exness), log in to a **demo** account and add gold to Market Watch.
-2. Install Node.js 20+ and Python 3.10+ (64-bit, same bitness as MT5), then `pip install MetaTrader5`.
-3. `npm install` then `npm run dev`.
-4. In the app: Settings > General, set the broker symbol (`GOLD`) or use "Find gold symbols in MT5".
-5. Settings > AI: pick a provider, save the API key, "Load models", choose one, "Test connection".
+1. Install the MT5 terminal from your broker (Exness) and log in to a **demo** account.
+2. Install Node.js 20+, then `npm install` and `npm run dev`.
+3. In Aurum: Settings > General. It shows the **HubPort** and **AuthToken** (with a Copy button) and the EA setup steps.
+4. In MT5: open MetaEditor, compile `bridge/mql5/AurumBridge.mq5`. Tools > Options > Expert Advisors: tick "Allow algorithmic trading" and add `http://127.0.0.1` to the allowed URLs.
+5. Attach the EA to any chart and paste the HubPort and AuthToken into its inputs. Aurum shows "EA connected".
+6. Set the broker symbol for gold in Settings > General (Exness: `XAUUSDm`). "Find gold symbols in MT5" lists the real names.
+7. Settings > AI: pick a provider, save the API key, "Load models", choose one, "Test connection".
 
-The app attaches to the open MT5 terminal. No EA is needed and no MT5 password is stored.
+The EA only streams data until you set `EnableTrading=true` in its inputs (demo accounts only unless `AllowLive=true`). No MT5 password is stored.
 Candle times follow the broker server clock, like the MT5 chart.
 
 ## Windows self-check
-Run `powershell -ExecutionPolicy Bypass -File scripts\windows-smoke.ps1` from the repo folder. It changes nothing and prints PASS/FAIL/WARN for Node, the exact Python Aurum will use (64-bit, MetaTrader5 package), installed MT5 terminals, whether MT5 is running at the same privilege level, port 8766, and `npm test`. The script was written but never run (no PowerShell in the build environment).
+Run `powershell -ExecutionPolicy Bypass -File scripts\windows-smoke.ps1` from the repo folder. It changes nothing and prints PASS/FAIL/WARN for Node, installed MT5 terminals, whether MT5 is running at the same privilege level, port 8766, and `npm test`. The script was written but never run (no PowerShell in the build environment).
 
 ## Develop
-- `npm test` runs core tests (Vitest), desktop tests and bridge tests (unittest).
+- `npm test` runs core tests and desktop tests (Vitest).
 - `npm run typecheck`
-- The MT5 module exists only on Windows; tests use stand-ins. The app never fabricates market data.
+- Tests use stand-ins for the EA. The app never fabricates market data.
 - Release and installer: `docs/RELEASING.md`.

@@ -13,19 +13,6 @@ function Show($state, $name, $detail) {
 $node = Get-Command node -ErrorAction SilentlyContinue
 if ($node) { $v = (node -v); if ([int]($v.TrimStart('v').Split('.')[0]) -ge 20) { Show PASS 'Node.js' $v } else { Show FAIL 'Node.js' "$v is too old. Install Node 20 or newer." } } else { Show FAIL 'Node.js' 'Not found. Install Node 20+ from nodejs.org.' }
 
-# Python the same way the app picks it (AURUM_PYTHON, else python)
-$py = if ($env:AURUM_PYTHON) { $env:AURUM_PYTHON } else { 'python' }
-$pyCmd = Get-Command $py -ErrorAction SilentlyContinue
-if (-not $pyCmd) { Show FAIL 'Python' "'$py' not found. Install 64-bit Python 3.12 and tick 'Add to PATH', or set AURUM_PYTHON to python.exe." }
-else {
-  $info = & $py -c "import sys,platform,struct;print(sys.executable+'|'+platform.python_version()+'|'+str(struct.calcsize('P')*8))"
-  $parts = $info.Split('|')
-  Show PASS 'Python' ("{0} ({1}, {2}-bit) at {3}" -f $parts[1], 'in use by Aurum', $parts[2], $parts[0])
-  if ($parts[2] -ne '64') { Show FAIL 'Python is 64-bit' 'MetaTrader5 needs 64-bit Python.' }
-  $mt = & $py -c "import MetaTrader5 as m;print(m.__version__)" 2>&1
-  if ($LASTEXITCODE -eq 0) { Show PASS 'MetaTrader5 package' $mt } else { Show FAIL 'MetaTrader5 package' ("Install it for exactly this Python:  `"{0}`" -m pip install MetaTrader5   (if pip finds nothing, use Python 3.12 64-bit)" -f $parts[0]) }
-}
-
 # MT5 terminals
 $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) | Where-Object { $_ }
 $terms = foreach ($r in $roots) { Get-ChildItem -Path $r -Filter 'terminal64.exe' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match 'MetaTrader' } }

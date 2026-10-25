@@ -61,10 +61,6 @@ export const AppConfigSchema = z.object({
   /** App-level symbol. Broker symbol is mapped separately (Exness here: GOLD). */
   symbol: z.string().default('XAUUSD'),
   brokerSymbol: z.string().default('GOLD'),
-  /** Optional full path to terminal64.exe when several MT5 terminals are installed. Empty = auto-detect. */
-  mt5Path: z.string().max(400).default(''),
-  /** How Aurum talks to MT5: the Python bridge (default, tested) or the optional AurumBridge.mq5 EA. */
-  mt5Mode: z.enum(['python', 'ea']).default('python'),
   timeframe: z.enum(['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1']).default('M15'),
   pipSize: z.number().positive().default(0.1),
   /** Chart workspace: single, two side by side, or 2x2. `timeframe` above is the single-chart timeframe. */

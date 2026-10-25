@@ -2,15 +2,18 @@
   "name": "aurum",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "test": "npm run test -w @aurum/core && npm run test -w @aurum/desktop && python3 -m unittest discover -s bridge/tests -t bridge",
+    "test": "npm run test -w @aurum/core && npm run test -w @aurum/desktop",
     "typecheck": "npm run typecheck -w @aurum/core && npm run typecheck -w @aurum/desktop",
     "dev": "npm run dev -w @aurum/desktop",
-    "bridge": "cd bridge && python -m aurum_bridge",
     "build": "npm run build -w @aurum/desktop",
-    "bridge:exe": "python bridge/build_exe.py",
     "dist:win": "npm run dist:win -w @aurum/desktop"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

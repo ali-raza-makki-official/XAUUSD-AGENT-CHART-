@@ -1,4 +1,4 @@
-import { PROVIDERS, modelCapsWith, NO_CAPS, type ListedCaps, type ModelCaps, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
+import { PROVIDERS, isTransientStatus, retryDelayMs, modelCapsWith, NO_CAPS, type ListedCaps, type ModelCaps, type AppConfig, type HttpRequest, type LlmRequest, type LlmResponse, type ProviderId } from '@aurum/core';
 import { getKey } from './secrets';
 
 const TIMEOUT_MS = 120_000;
@@ -13,21 +13,34 @@ function assertSafeUrl(u: string): void {
 
 const scrub = (text: string, key: string) => (key ? text.split(key).join('***') : text);
 
+const MAX_ATTEMPTS = 3;
+const wait = (ms: number, signal: AbortSignal) => new Promise<void>((r) => { const t = setTimeout(r, ms); signal.addEventListener('abort', () => { clearTimeout(t); r(); }, { once: true }); });
+
+/** One provider call. Rate limits, overload and gateway errors are retried up to twice (honouring Retry-After); everything else fails at once. */
 async function send(provider: ProviderId, http: HttpRequest, key: string, signal: AbortSignal): Promise<unknown> {
   assertSafeUrl(http.url);
-  let res: Response;
-  try {
-    res = await fetch(http.url, { method: http.method, headers: http.headers, body: http.body, signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) });
-  } catch (e) {
-    if (signal.aborted) throw new Error('Stopped.');
-    const msg = e instanceof Error ? (e.name === 'TimeoutError' ? 'The provider took too long to answer.' : e.message) : String(e);
-    throw new Error(scrub(`Could not reach ${PROVIDERS[provider].label}: ${msg}`, key));
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(http.url, { method: http.method, headers: http.headers, body: http.body, signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]) });
+    } catch (e) {
+      if (signal.aborted) throw new Error('Stopped.');
+      const timedOut = e instanceof Error && e.name === 'TimeoutError';
+      if (!timedOut && attempt < MAX_ATTEMPTS - 1) { await wait(retryDelayMs(attempt, null), signal); if (signal.aborted) throw new Error('Stopped.'); continue; }
+      const msg = e instanceof Error ? (timedOut ? 'The provider took too long to answer.' : e.message) : String(e);
+      throw new Error(scrub(`Could not reach ${PROVIDERS[provider].label}: ${msg}`, key));
+    }
+    const text = await res.text();
+    let json: unknown = {};
+    try { json = JSON.parse(text); } catch { /* non-JSON error page */ }
+    if (!res.ok && isTransientStatus(res.status) && attempt < MAX_ATTEMPTS - 1) {
+      await wait(retryDelayMs(attempt, res.headers.get('retry-after')), signal);
+      if (signal.aborted) throw new Error('Stopped.');
+      continue;
+    }
+    if (!res.ok) throw new Error(scrub(PROVIDERS[provider].parseError(res.status, json), key));
+    return json;
   }
-  const text = await res.text();
-  let json: unknown = {};
-  try { json = JSON.parse(text); } catch { /* non-JSON error page */ }
-  if (!res.ok) throw new Error(scrub(PROVIDERS[provider].parseError(res.status, json), key));
-  return json;
 }
 
 function resolve(config: AppConfig, provider: ProviderId) {

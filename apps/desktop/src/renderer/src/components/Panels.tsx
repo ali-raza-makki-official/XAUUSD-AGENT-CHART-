@@ -1,7 +1,7 @@
 import { Splitter } from './Splitter';
 import { SIZE_LIMITS } from '../lib/panelSizes';
 import { useState, type ReactNode } from 'react';
-import { Crosshair, Maximize2, Minimize2, Bell, BookOpen, Brain, Briefcase, Globe2, ChevronDown, ChevronUp, History, Scale, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
+import { Crosshair, Maximize2, Minimize2, Bell, BookOpen, Brain, HeartPulse, Briefcase, Globe2, ChevronDown, ChevronUp, History, Scale, ScrollText, Undo2, type LucideIcon } from 'lucide-react';
 import type { LogLine } from '../hooks';
 import { EmptyState, IconButton, Button } from './ui';
 import { ContextPanel } from './ContextPanel';
@@ -10,6 +10,7 @@ import { JournalPanel } from './JournalPanel';
 import { ViewsPanel } from './ViewsPanel';
 import { PlansPanel } from './Assistant';
 import { LearningPanel } from './LearningPanel';
+import { HealthPanel } from './HealthPanel';
 import type { AppConfig } from '@aurum/core';
 import type { AurumApi } from '../../../shared';
 
@@ -21,6 +22,7 @@ const TABS: { id: string; label: string; icon: LucideIcon; empty: string }[] = [
   { id: 'alerts', label: 'Alerts', icon: Bell, empty: 'No alerts yet. Alerts and schedules will appear here.' },
   { id: 'views', label: 'My view vs AI', icon: Scale, empty: '' },
   { id: 'journal', label: 'Journal', icon: BookOpen, empty: 'The trade journal is empty.' },
+  { id: 'health', label: 'Health', icon: HeartPulse, empty: '' },
   { id: 'learning', label: 'Learning', icon: Brain, empty: '' },
   { id: 'ai', label: 'AI actions', icon: History, empty: 'Every AI action will be listed here, each one undoable.' },
 ];
@@ -29,7 +31,7 @@ const LEVEL = (t: string) => (/^(DISCONNECTED|ERROR)/.test(t) ? 'var(--sell)' : 
 
 export interface AiAction { at: number; label: string }
 
-export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, positions, full, onFull, height, onHeight, onResetHeight, tf, onAskAi, onSettings }: { onSettings?: () => void; tf?: import('@aurum/core').Timeframe; onAskAi?: (text: string) => void; full?: boolean; onFull?: () => void; height?: number; onHeight?: (h: number) => void; onResetHeight?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
+export function BottomPanel({ feed, log, aiActions, onUndoAllAi, api, config, positions, full, onFull, height, onHeight, onResetHeight, tf, onAskAi, onSettings }: { feed?: { status: import('@aurum/core').FeedStatus; tick: import('@aurum/core').Tick | null; account: import('@aurum/core').AccountInfo | null }; onSettings?: () => void; tf?: import('@aurum/core').Timeframe; onAskAi?: (text: string) => void; full?: boolean; onFull?: () => void; height?: number; onHeight?: (h: number) => void; onResetHeight?: () => void; log: LogLine[]; aiActions: AiAction[]; onUndoAllAi: () => void; api?: AurumApi; config?: AppConfig | null; positions?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('feed');
   const cur = TABS.find((t) => t.id === tab)!;
@@ -55,6 +57,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
           {tab === 'plans' && <PlansPanel api={api} enabled={!!config?.assistant.enabled} onSettings={() => onSettings?.()} />}
           {tab === 'journal' && <JournalPanel api={api} config={config} />}
           {tab === 'views' && <ViewsPanel api={api} tf={tf ?? 'H1'} onAskAi={(t) => onAskAi?.(t)} />}
+          {tab === 'health' && feed && <HealthPanel api={api} config={config} status={feed.status} tick={feed.tick} account={feed.account} />}
           {tab === 'learning' && <LearningPanel api={api} config={config} />}
           {tab === 'context' && <ContextPanel api={api} config={config ?? null} />}
           {tab === 'feed' && log.length ? (
@@ -67,7 +70,7 @@ export function BottomPanel({ log, aiActions, onUndoAllAi, api, config, position
               <div className="row" style={{ marginBottom: 6 }}><Button size="sm" icon={Undo2} onClick={onUndoAllAi}>Undo all AI changes today</Button></div>
               <div className="log">{[...aiActions].reverse().map((a, i) => <div key={i}><span className="t">{new Date(a.at).toLocaleTimeString()}</span>{a.label}</div>)}</div>
             </div>
-          ) : tab !== 'context' && tab !== 'alerts' && tab !== 'journal' && tab !== 'views' && tab !== 'plans' && tab !== 'learning' && <EmptyState icon={cur.icon} title={cur.empty} />}
+          ) : tab !== 'context' && tab !== 'alerts' && tab !== 'journal' && tab !== 'views' && tab !== 'plans' && tab !== 'learning' && tab !== 'health' && <EmptyState icon={cur.icon} title={cur.empty} />}
         </div>
       )}
     </section>

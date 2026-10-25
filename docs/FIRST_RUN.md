@@ -4,7 +4,8 @@ Everything below was built and tested here against stand-ins (a fake EA, mock AI
 
 1. **EA**: recompile `bridge/mql5/AurumBridge.mq5` (new timeframes, safer candle requests). Attach it to a chart, paste HubPort and AuthToken. Set the broker symbol (Settings > General, "Find gold symbols"), e.g. `XAUUSDm`.
 2. **Reconnect**: close MT5, open it again; close Aurum, open it again. Aurum should show "MT5 connected" by itself each time. Turn on Settings > General > "Start Aurum when I sign in to Windows" (installed app only).
-3. **Timeframes**: the dropdown beside Indicators lists every MT5 period (M1 ... MN1). 13 min, 45 min and a year do not exist in MT5.
+3. **Timeframes**: the dropdown beside Indicators lists every MT5 period (M1 ... MN1) plus M13, M45 and Y1, which Aurum builds from real MT5 candles (M13 from M1, M45 from M15, Y1 from MN1; capped by how much history the EA can send).
+3b. **Pending orders**: the EA (version 0.11) now places, lists, changes and cancels limit/stop orders. Compile it first (MetaEditor shows any error), then place a far-away pending order on the demo account from Positions > New pending order, and cancel it.
 4. **AI**: Settings > AI. Pick provider and model, "Load models", "Test connection". The line under the model shows what it can read (images, PDFs, voice). Correct it there if the guess is wrong.
 5. **Zones**: ask the AI for zones. Compare `find_zones` results (FVG, order blocks, liquidity) with your own chart. A zone is valid for 3 touches; the 4th ends it.
 6. **Watching levels**: draw a zone with a label and a note, ask the AI to `watch` it. You get an "approaching" and a "reached" alert with your label, note and the zone's validity.

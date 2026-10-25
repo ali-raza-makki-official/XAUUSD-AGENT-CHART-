@@ -180,7 +180,7 @@ export class EaHub {
         case '/symbols': { need(); const found = new Set<string>(); for (const n of (q.get('q') ?? 'XAU,GOLD').split(',')) { const r = await this.request({ action: 'symbols', q: n }); for (const s of r.list ?? []) found.add(s); } return send(200, { symbols: [...found].sort().slice(0, 50) }); }
         case '/quotes': { need(); const syms = (q.get('symbols') ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 20); if (!syms.length) throw new HttpErr(400, 'No symbols given'); const r = await this.request({ action: 'quotes', symbols: syms }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { quotes: r.list }); }
         case '/positions': need(); return send(200, { positions: this.positions });
-        case '/orders': need(); return send(200, { orders: [] }); // the EA does not report pending orders yet
+        case '/orders': { need(); const r = await this.request({ action: 'orders' }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { orders: r.list ?? [] }); }
         case '/deals': { need(); const r = await this.request({ action: 'deals', since: Number(q.get('since') ?? 0) || undefined }); if (!r.ok) throw new HttpErr(503, r.error); return send(200, { deals: (r.list ?? []).map((d: object) => ({ reason: 'unknown', ...d })) }); }
         case '/trade/status': return send(200, { enabled: this.tradingEnabled, provider: 'ea', connected: this.connected });
         case '/trade/find': {
@@ -188,7 +188,10 @@ export class EaHub {
           const r = await this.request({ action: 'find', command_id: q.get('commandId') });
           const ticket = r.found ? Number(r.ticket) : null;
           const pos = ticket ? this.positions.find((p) => p.ticket === ticket) ?? null : null;
-          return send(200, { tag: r.tag, queried: { positions: true, orders: false, deals: true, historyOrders: false }, positions: pos ? [pos] : [], orders: [], deals: [], historyOrders: [], target: r.found ? { ticket, position: pos, order: null, deals: [] } : null });
+          const ol = await this.request({ action: 'orders' }).catch(() => null);
+          const orders: { ticket: number }[] = ol && ol.ok ? (ol.list ?? []) : [];
+          const ord = ticket ? orders.find((o) => o.ticket === ticket) ?? null : null;
+          return send(200, { tag: r.tag, queried: { positions: true, orders: !!(ol && ol.ok), deals: true, historyOrders: false }, positions: pos ? [pos] : [], orders: ord ? [ord] : [], deals: [], historyOrders: [], target: r.found ? { ticket, position: pos, order: ord, deals: [] } : null });
         }
       }
       if (url.pathname.startsWith('/trade/') && req.method === 'POST') {
@@ -198,12 +201,14 @@ export class EaHub {
         const dev = body.deviationPoints && this.point ? body.deviationPoints * this.point : undefined;
         const map: Record<string, Record<string, unknown> | null> = {
           open_market: { action: 'open', command_id: body.commandId, symbol: body.symbol, side: body.side, volume: body.volume, sl: body.sl ?? 0, tp: body.tp ?? 0, ...(dev ? { deviation: dev } : {}) },
-          modify_sltp: { action: 'modify', ticket: body.ticket, ...(body.sl !== undefined ? { sl: body.sl ?? 0 } : {}), ...(body.tp !== undefined ? { tp: body.tp ?? 0 } : {}) },
+          open_pending: { action: 'pending', command_id: body.commandId, symbol: body.symbol, order_type: body.orderType, volume: body.volume, price: body.price, sl: body.sl ?? 0, tp: body.tp ?? 0, ...(body.expiration ? { expiration: body.expiration } : {}) },
+          cancel_pending: { action: 'cancel', command_id: body.commandId, ticket: body.ticket },
+          modify_sltp: { action: 'modify', ticket: body.ticket, ...(body.ticketKind === 'order' ? { kind: 'order' } : {}), ...(body.sl !== undefined ? { sl: body.sl ?? 0 } : {}), ...(body.tp !== undefined ? { tp: body.tp ?? 0 } : {}) },
           close_position: { action: 'close', command_id: body.commandId, ticket: body.ticket },
           partial_close: { action: 'close', command_id: body.commandId, ticket: body.ticket, volume: body.volume },
         };
         const msg = map[action];
-        if (!msg) throw new HttpErr(400, `'${action}' is not supported by the EA bridge yet. Use the Python bridge for pending orders.`, 'unsupported');
+        if (!msg) throw new HttpErr(400, `'${action}' is not supported by the EA bridge.`, 'unsupported');
         const r = await this.request(msg, 45000).catch((e) => { throw new HttpErr(504, `No answer from the EA: ${e.message}. The order may or may not have been sent. Check MT5.`, 'unknown'); });
         return send(200, { status: r.status, retcode: r.retcode ?? null, message: r.message, positionTicket: r.ticket ?? null, order: null, deal: null, volume: r.volume ?? null, price: r.price ?? null, ...(r.duplicate ? { duplicate: true } : {}) });
       }

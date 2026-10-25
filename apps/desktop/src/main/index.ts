@@ -113,6 +113,8 @@ function createWindow(): void {
     },
   });
   win.once('ready-to-show', () => win?.show());
+  // F11: real full screen of the whole window (the chart has its own in-app full screen button).
+  win.webContents.on('before-input-event', (e, input) => { if (input.type === 'keyDown' && input.key === 'F11' && win) { win.setFullScreen(!win.isFullScreen()); e.preventDefault(); } });
   win.webContents.on('did-start-loading', () => wa?.setAiReady(false)); // the renderer re-announces itself once mounted
   // Navigation controls: the app never navigates away or opens windows; external links go to the OS browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -302,7 +304,7 @@ else {
       registerNotificationChannel: (ch) => alerts.registry.register(ch),
       transcriber: makeTranscriber({ getConfig: () => config, getKey }),
     });
-    registerWhatsAppIpc(ipcMain, wa);
+    registerWhatsAppIpc(ipcMain, wa, async () => wa.sendBriefing(composeBriefing(await briefingInput())));
     wa.start();
     watcher = new ConnectionWatcher({ notify: (text, priority) => { void wa?.notifyStatus(text, priority); } });
     bridge.on('status', (st: FeedStatus) => watcher?.onStatus(st));

@@ -100,7 +100,7 @@ describe('defaults are on the safe side', () => {
   });
 });
 
-import { nextBarStart, TIMEFRAMES, TIMEFRAME_SECONDS } from '../src';
+import { aggregateCandles, nextBarStart, TIMEFRAMES, TIMEFRAME_SECONDS } from '../src';
 
 describe('all MT5 timeframes', () => {
   it('has a length for every period and aligns bars like MT5', () => {
@@ -113,5 +113,16 @@ describe('all MT5 timeframes', () => {
     expect(new Date(barStart(t, 'W1') * 1000).getUTCDay()).toBe(0);
     expect(barStart(t, 'MN1')).toBe(Date.UTC(2026, 9, 1) / 1000);
     expect(nextBarStart(Date.UTC(2026, 1, 1) / 1000, 'MN1')).toBe(Date.UTC(2026, 2, 1) / 1000); // February is 28 days
+  });
+
+  it('builds M13, M45 and Y1 from real base candles', () => {
+    const c = (time: number, o: number, h: number, l: number, cl: number, volume = 1) => ({ time, open: o, high: h, low: l, close: cl, volume });
+    const t0 = Math.floor(Date.UTC(2026, 0, 5, 10, 0) / 1000 / 2700) * 2700; // a 45-minute boundary
+    const m45 = aggregateCandles([c(t0, 10, 12, 9, 11), c(t0 + 900, 11, 15, 10, 14), c(t0 + 1800, 14, 14.5, 8, 9), c(t0 + 2700, 9, 9.5, 8.5, 9.2)], 'M45');
+    expect(m45).toEqual([{ time: t0, open: 10, high: 15, low: 8, close: 9, volume: 3 }, { time: t0 + 2700, open: 9, high: 9.5, low: 8.5, close: 9.2, volume: 1 }]);
+    const y = aggregateCandles([c(Date.UTC(2025, 11, 1) / 1000, 1, 2, 0.5, 1.5), c(Date.UTC(2026, 0, 1) / 1000, 1.5, 3, 1, 2)], 'Y1');
+    expect(y.map((k) => new Date(k.time * 1000).getUTCFullYear())).toEqual([2025, 2026]);
+    expect(barStart(Date.UTC(2026, 6, 4) / 1000, 'Y1')).toBe(Date.UTC(2026, 0, 1) / 1000);
+    expect(nextBarStart(Date.UTC(2026, 0, 1) / 1000, 'Y1')).toBe(Date.UTC(2027, 0, 1) / 1000);
   });
 });

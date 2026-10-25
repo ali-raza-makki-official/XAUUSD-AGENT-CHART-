@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Clock } from 'lucide-react';
-import { TIMEFRAMES, TIMEFRAME_LABEL, type Timeframe } from '@aurum/core';
+import { TIMEFRAMES, TIMEFRAME_LABEL, isVirtualTimeframe, type Timeframe } from '@aurum/core';
 
 const GROUPS: { title: string; items: Timeframe[] }[] = [
-  { title: 'Minutes', items: TIMEFRAMES.filter((t) => t.startsWith('M') && t !== 'MN1') },
+  { title: 'Minutes', items: TIMEFRAMES.filter((t) => t.startsWith('M') && t !== 'MN1' && !isVirtualTimeframe(t)) },
   { title: 'Hours', items: TIMEFRAMES.filter((t) => t.startsWith('H')) },
   { title: 'Days and longer', items: ['D1', 'W1', 'MN1'] },
+  { title: 'Built from MT5 candles (not MT5 periods)', items: TIMEFRAMES.filter(isVirtualTimeframe) },
 ];
 
 /** Timeframe picker as a dropdown: every period MT5 offers, grouped, current one marked. */

@@ -15,7 +15,12 @@ const AiResponseSchema = z.object({
 });
 
 /** Zod-validated WhatsApp IPC. The token only ever flows renderer -> main here; nothing returns it. */
-export function registerWhatsAppIpc(ipc: IpcMain, svc: WhatsAppService): void {
+export function registerWhatsAppIpc(ipc: IpcMain, svc: WhatsAppService, briefingNow?: () => Promise<boolean>): void {
+  ipc.handle(WA_IPC.briefingTest, async () => {
+    if (!briefingNow) return { ok: false, message: 'The briefing is not available.' };
+    const ok = await briefingNow();
+    return { ok, message: ok ? 'Briefing sent. Check WhatsApp.' : 'Not sent. WhatsApp must be enabled, linked, alerts-to-WhatsApp on, and outside quiet hours.' };
+  });
   ipc.handle(WA_IPC.status, () => svc.status());
   ipc.handle(WA_IPC.setToken, (_e, t: unknown) => svc.setToken(z.string().trim().min(8).max(2000).parse(t)));
   ipc.handle(WA_IPC.clearToken, () => svc.clearToken());

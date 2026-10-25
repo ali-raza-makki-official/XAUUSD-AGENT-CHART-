@@ -435,3 +435,4 @@ body.resizing .splitter { pointer-events: auto; }
 .vcmp-agree { border-left-color: var(--buy); }
 .vcmp-disagree { border-left-color: var(--sell); }
 .vcmp-different_kind { border-left-color: var(--warn); }
+.subhead { margin: 12px 0 6px; font-size: 12px; color: var(--t2); text-transform: uppercase; letter-spacing: .06em; }

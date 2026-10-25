@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import {
-  AccountInfoSchema,
+  AccountInfoSchema, VIRTUAL_TIMEFRAMES, aggregateCandles, isVirtualTimeframe,
   CandlesResponseSchema,
   SymbolSpecSchema,
   STALE_AFTER_SECONDS,
@@ -130,6 +130,12 @@ export class BridgeManager extends EventEmitter<BridgeEvents> {
   }
 
   async candles(tf: Timeframe, count: number): Promise<Candle[]> {
+    if (isVirtualTimeframe(tf)) {
+      // MT5 has no such period: build it from the real candles of the base period (never from anything else).
+      const { base, ratio } = VIRTUAL_TIMEFRAMES[tf];
+      const need = Math.min(5000, (count + 1) * ratio);
+      return aggregateCandles(await this.candles(base, need), tf).slice(-count);
+    }
     const data = CandlesResponseSchema.parse(await this.get(`/candles?tf=${tf}&count=${count}`));
     return data.candles;
   }

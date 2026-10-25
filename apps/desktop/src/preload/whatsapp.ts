@@ -14,6 +14,7 @@ export function whatsAppPreload(ipc: IpcRenderer): WhatsAppApi {
     waStartPairing: () => ipc.invoke(WA_IPC.startPairing),
     waCancelPairing: () => ipc.invoke(WA_IPC.cancelPairing),
     waTest: () => ipc.invoke(WA_IPC.test),
+    waBriefingTest: () => ipc.invoke(WA_IPC.briefingTest),
     waGetSettings: () => ipc.invoke(WA_IPC.getSettings),
     waSetSettings: (p) => ipc.invoke(WA_IPC.setSettings, p),
     waHistory: (n) => ipc.invoke(WA_IPC.history, n),

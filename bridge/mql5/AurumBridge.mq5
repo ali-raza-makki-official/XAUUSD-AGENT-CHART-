@@ -18,7 +18,7 @@
 //|   3. Attach to ANY chart and paste the token shown in Aurum.     |
 //+------------------------------------------------------------------+
 #property copyright "Aurum"
-#property version   "0.10"
+#property version   "0.11"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -51,6 +51,7 @@ ulong    g_lastPosMs = 0;
 string   g_posSig = "";
 
 void HandleMessage(const string json);
+void DoModifyOrder(const string rid, const string json, const ulong ticket);
 void Disconnect(const string why);
 
 //+------------------------------------------------------------------+
@@ -650,6 +651,7 @@ void DoModify(const string json)
   {
    string rid = JStr(json, "req_id");
    ulong ticket = (ulong)JNum(json, "ticket");
+   if(JStr(json, "kind") == "order") { DoModifyOrder(rid, json, ticket); return; }
    if(!PositionSelectByTicket(ticket)) { Result(rid, "rejected", "Position not found."); return; }
    string sym = PositionGetString(POSITION_SYMBOL);
    if(!TradingGate(rid, sym)) return;
@@ -689,6 +691,120 @@ void DoClose(const string json)
    SendPositions(true);
   }
 
+
+//+------------------------------------------------------------------+
+//| Pending orders                                                   |
+//+------------------------------------------------------------------+
+bool PendingTypeFrom(const string s, ENUM_ORDER_TYPE &t)
+  {
+   if(s == "buy_limit")  { t = ORDER_TYPE_BUY_LIMIT;  return true; }
+   if(s == "sell_limit") { t = ORDER_TYPE_SELL_LIMIT; return true; }
+   if(s == "buy_stop")   { t = ORDER_TYPE_BUY_STOP;   return true; }
+   if(s == "sell_stop")  { t = ORDER_TYPE_SELL_STOP;  return true; }
+   return false;
+  }
+
+string PendingName(const long t)
+  {
+   if(t == ORDER_TYPE_BUY_LIMIT)  return "buy_limit";
+   if(t == ORDER_TYPE_SELL_LIMIT) return "sell_limit";
+   if(t == ORDER_TYPE_BUY_STOP)   return "buy_stop";
+   if(t == ORDER_TYPE_SELL_STOP)  return "sell_stop";
+   if(t == ORDER_TYPE_BUY_STOP_LIMIT)  return "buy_stop_limit";
+   if(t == ORDER_TYPE_SELL_STOP_LIMIT) return "sell_stop_limit";
+   return "other";
+  }
+
+void DoOrders(const string json)
+  {
+   string rid = JStr(json, "req_id");
+   string list = "";
+   int n = 0;
+   for(int i = 0; i < OrdersTotal(); i++)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0) continue;
+      string sym = OrderGetString(ORDER_SYMBOL);
+      int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+      double sl = OrderGetDouble(ORDER_SL), tp = OrderGetDouble(ORDER_TP);
+      long exp = (long)OrderGetInteger(ORDER_TIME_EXPIRATION);
+      string item = "{\"ticket\":" + (string)t + ",\"time\":" + (string)OrderGetInteger(ORDER_TIME_SETUP) +
+                    ",\"symbol\":\"" + Esc(sym) + "\",\"type\":\"" + PendingName(OrderGetInteger(ORDER_TYPE)) +
+                    "\",\"volume\":" + Num(OrderGetDouble(ORDER_VOLUME_CURRENT), 4) +
+                    ",\"priceOpen\":" + Num(OrderGetDouble(ORDER_PRICE_OPEN), digits) +
+                    ",\"priceCurrent\":" + Num(OrderGetDouble(ORDER_PRICE_CURRENT), digits) +
+                    ",\"sl\":" + (sl > 0 ? Num(sl, digits) : "null") + ",\"tp\":" + (tp > 0 ? Num(tp, digits) : "null") +
+                    ",\"state\":" + (string)OrderGetInteger(ORDER_STATE) +
+                    ",\"magic\":" + (string)OrderGetInteger(ORDER_MAGIC) + ",\"comment\":\"" + Esc(OrderGetString(ORDER_COMMENT)) +
+                    "\",\"expiration\":" + (exp > 0 ? (string)exp : "null") + ",\"positionId\":null}";
+      list += (n > 0 ? "," : "") + item;
+      n++;
+     }
+   WsSend("{\"action\":\"orders\",\"req_id\":\"" + Esc(rid) + "\",\"ok\":true,\"list\":[" + list + "]}");
+  }
+
+void DoPending(const string json)
+  {
+   string rid = JStr(json, "req_id"), cid = JStr(json, "command_id"), sym = JStr(json, "symbol"), ot = JStr(json, "order_type");
+   if(!TradingGate(rid, sym)) return;
+   ENUM_ORDER_TYPE type;
+   if(!PendingTypeFrom(ot, type)) { Result(rid, "rejected", "Unknown pending order type " + ot + "."); return; }
+   double price = JNum(json, "price"), sl = JNum(json, "sl"), tp = JNum(json, "tp");
+   double vol = NormVolume(sym, JNum(json, "volume"));
+   long exp = (long)JNum(json, "expiration", 0);
+   if(vol <= 0.0) { Result(rid, "rejected", "Volume is below the broker minimum or invalid."); return; }
+   if(price <= 0.0) { Result(rid, "rejected", "A pending order needs a price."); return; }
+   if(sl <= 0.0 && !AllowNoStopLoss) { Result(rid, "rejected", "A stop loss is required."); return; }
+   if(exp > 0 && exp <= (long)TimeCurrent()) { Result(rid, "rejected", "The expiration time is already in the past."); return; }
+   string tag = CommandTag(cid), where;
+   ulong existing = FindTag(tag, where);
+   if(existing > 0) { Result(rid, "done", "Already placed earlier (" + where + ").", existing, 0, 0, 0, true); return; }
+   MqlTick tk;
+   if(!SymbolInfoTick(sym, tk)) { Result(rid, "rejected", "No quote for " + sym + "."); return; }
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   bool buy = (type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP);
+   // The entry must be on the correct side of the market for the order type.
+   if(type == ORDER_TYPE_BUY_LIMIT && price >= tk.ask)  { Result(rid, "rejected", "A buy limit must be below the current ask."); return; }
+   if(type == ORDER_TYPE_BUY_STOP && price <= tk.ask)   { Result(rid, "rejected", "A buy stop must be above the current ask."); return; }
+   if(type == ORDER_TYPE_SELL_LIMIT && price <= tk.bid) { Result(rid, "rejected", "A sell limit must be above the current bid."); return; }
+   if(type == ORDER_TYPE_SELL_STOP && price >= tk.bid)  { Result(rid, "rejected", "A sell stop must be below the current bid."); return; }
+   if(sl > 0 && ((buy && sl >= price) || (!buy && sl <= price))) { Result(rid, "rejected", "Stop loss is on the wrong side of the entry price."); return; }
+   if(tp > 0 && ((buy && tp <= price) || (!buy && tp >= price))) { Result(rid, "rejected", "Take profit is on the wrong side of the entry price."); return; }
+   g_trade.SetExpertMagicNumber(AURUM_MAGIC);
+   g_trade.SetTypeFilling(FillingFor(sym));
+   bool ok = g_trade.OrderOpen(sym, type, vol, 0.0, NormalizeDouble(price, digits), NormalizeDouble(sl, digits), NormalizeDouble(tp, digits),
+                               exp > 0 ? ORDER_TIME_SPECIFIED : ORDER_TIME_GTC, (datetime)exp, tag);
+   Report(rid, ok, g_trade.ResultOrder());
+  }
+
+void DoCancel(const string json)
+  {
+   string rid = JStr(json, "req_id");
+   ulong ticket = (ulong)JNum(json, "ticket");
+   if(!OrderSelect(ticket)) { Result(rid, "rejected", "Pending order not found (it may have been filled or removed)."); return; }
+   string sym = OrderGetString(ORDER_SYMBOL);
+   if(!TradingGate(rid, sym)) return;
+   g_trade.SetExpertMagicNumber(AURUM_MAGIC);
+   bool ok = g_trade.OrderDelete(ticket);
+   Report(rid, ok, ticket);
+  }
+
+void DoModifyOrder(const string rid, const string json, const ulong ticket)
+  {
+   if(!OrderSelect(ticket)) { Result(rid, "rejected", "Pending order not found."); return; }
+   string sym = OrderGetString(ORDER_SYMBOL);
+   if(!TradingGate(rid, sym)) return;
+   int digits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
+   double price = OrderGetDouble(ORDER_PRICE_OPEN);
+   double sl = JHas(json, "sl") ? JNum(json, "sl") : OrderGetDouble(ORDER_SL);
+   double tp = JHas(json, "tp") ? JNum(json, "tp") : OrderGetDouble(ORDER_TP);
+   ENUM_ORDER_TYPE_TIME tt = (ENUM_ORDER_TYPE_TIME)OrderGetInteger(ORDER_TYPE_TIME);
+   datetime exp = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
+   g_trade.SetExpertMagicNumber(AURUM_MAGIC);
+   bool ok = g_trade.OrderModify(ticket, NormalizeDouble(price, digits), NormalizeDouble(sl, digits), NormalizeDouble(tp, digits), tt, exp);
+   Report(rid, ok, ticket);
+  }
+
 void HandleMessage(const string json)
   {
    string action = JStr(json, "action");
@@ -705,6 +821,9 @@ void HandleMessage(const string json)
    else if(action == "open")      DoOpen(json);
    else if(action == "modify")    DoModify(json);
    else if(action == "close")     DoClose(json);
+   else if(action == "pending")   DoPending(json);
+   else if(action == "cancel")    DoCancel(json);
+   else if(action == "orders")    DoOrders(json);
    else if(action == "registered")
      {
       if(StringFind(json, "\"ok\":false") >= 0)

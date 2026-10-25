@@ -10,6 +10,7 @@ type Open = (body: { type: string } & Record<string, unknown>, extra?: string[])
 export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open: Open; onSettings: () => void }) {
   const [st, setSt] = useState<OrdersState | null>(null);
   const [edit, setEdit] = useState<{ ticket: number; sl: string; tp: string } | null>(null);
+  const [pform, setPform] = useState<{ orderType: 'buy_limit' | 'sell_limit' | 'buy_stop' | 'sell_stop'; price: string; sl: string; tp: string; lots: string; hours: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -79,6 +80,45 @@ export function PositionsPanel({ api, open, onSettings }: { api: AurumApi; open:
             ))}
           </tbody>
         </table>
+      )}
+      <h4 className="subhead">Pending orders</h4>
+      {st.orders.length === 0 ? <span className="hint">No pending orders.</span> : (
+        <table className="dtable">
+          <thead><tr><th>Ticket</th><th>Type</th><th>Lots</th><th>Price</th><th>SL</th><th>TP</th><th>Expires</th><th /></tr></thead>
+          <tbody>
+            {st.orders.map((o) => (
+              <tr key={o.ticket}>
+                <td className="mono">{o.ticket}</td>
+                <td>{o.type.replace('_', ' ')}</td>
+                <td className="mono">{o.volume.toFixed(2)}</td>
+                <td className="mono">{o.priceOpen.toFixed(2)}</td>
+                <td className="mono">{o.sl?.toFixed(2) ?? <span className="warn">none</span>}</td>
+                <td className="mono">{o.tp?.toFixed(2) ?? '–'}</td>
+                <td className="mono">{o.expiration ? new Date(o.expiration * 1000).toISOString().slice(5, 16).replace('T', ' ') : 'until cancelled'}</td>
+                <td><Button size="sm" variant="danger" onClick={() => open({ type: 'cancel_pending', ticket: o.ticket })}>Cancel order</Button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {!pform ? (
+        <div style={{ marginTop: 8 }}><Button size="sm" disabled={!st.enabled} onClick={() => setPform({ orderType: 'buy_limit', price: '', sl: '', tp: '', lots: String(min), hours: '' })}>New pending order</Button></div>
+      ) : (
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+          <select className="input" aria-label="Pending order type" value={pform.orderType} onChange={(e) => setPform({ ...pform, orderType: e.target.value as typeof pform.orderType })}>
+            {(['buy_limit', 'sell_limit', 'buy_stop', 'sell_stop'] as const).map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+          </select>
+          {([['price', 'Entry price'], ['sl', 'SL (required)'], ['tp', 'TP'], ['lots', 'Lots'], ['hours', 'Expires in hours']] as const).map(([k, label]) => (
+            <input key={k} className="input mono" style={{ width: 118 }} inputMode="decimal" aria-label={label} placeholder={label} value={pform[k]} onChange={(e) => setPform({ ...pform, [k]: e.target.value })} />
+          ))}
+          <Button size="sm" variant="primary" onClick={() => {
+            const price = Number(pform.price), sl = Number(pform.sl), vol = Number(pform.lots), tp = pform.tp.trim() === '' ? null : Number(pform.tp), hrs = pform.hours.trim() === '' ? null : Number(pform.hours);
+            if (!(price > 0) || !(sl > 0) || !(vol > 0) || (tp !== null && !(tp > 0)) || (hrs !== null && !(hrs > 0))) return;
+            open({ type: 'open_pending', orderType: pform.orderType, price, volume: vol, sl, tp, ...(hrs ? { expiration: Math.floor(Date.now() / 1000) + Math.round(hrs * 3600) } : {}) });
+            setPform(null);
+          }}>Review</Button>
+          <Button size="sm" onClick={() => setPform(null)}>Close</Button>
+        </div>
       )}
     </div>
   );

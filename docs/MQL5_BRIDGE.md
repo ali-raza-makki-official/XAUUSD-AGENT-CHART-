@@ -10,7 +10,8 @@ a loopback WebSocket server and streams data / executes commands. It is the ONLY
   the Confirm page, related-market quotes route, wrong token rejected, wrong gold symbol explained.
 - The EA compiled and connected on the owner's Windows PC (Journal: "connected to Aurum"). Not yet verified against a real broker: order
   filling modes, retcodes, comment kept on closing deals, hedging vs netting.
-- Not supported: pending orders and pending-order lists. Reconciliation after an unknown result uses the EA's `find` and may stay
+- Pending orders: `pending` (buy/sell limit/stop with optional expiry), `cancel`, `orders` (list) and `modify` with `kind:"order"`. Written for EA version 0.11 and not yet compiled or run against a real broker.
+- Not supported: Reconciliation after an unknown result uses the EA's `find` and may stay
   "inconclusive" more often.
 - Common mistake: the broker's gold symbol is not `GOLD` (Exness: `XAUUSDm`). Set it in Settings > General; the app lists the real names when it cannot find one.
 

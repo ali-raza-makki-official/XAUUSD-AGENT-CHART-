@@ -8,6 +8,7 @@ export const WA_IPC = {
   startPairing: 'wa:startPairing',
   cancelPairing: 'wa:cancelPairing',
   test: 'wa:test',
+  briefingTest: 'wa:briefingTest',
   getSettings: 'wa:getSettings',
   setSettings: 'wa:setSettings',
   history: 'wa:history',
@@ -82,6 +83,8 @@ export interface WhatsAppApi {
   waStartPairing(): Promise<void>;
   waCancelPairing(): Promise<void>;
   waTest(): Promise<{ ok: boolean; message: string }>;
+  /** Send today's briefing to WhatsApp right now so the content can be checked. */
+  waBriefingTest(): Promise<{ ok: boolean; message: string }>;
   waGetSettings(): Promise<WaUiSettings>;
   waSetSettings(patch: WaUiSettingsPatch): Promise<WaUiSettings>;
   waHistory(limit?: number): Promise<WaHistoryEntry[]>;

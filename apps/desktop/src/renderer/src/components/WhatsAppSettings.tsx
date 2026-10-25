@@ -26,6 +26,7 @@ export function WhatsAppSettings({ api }: { api: AurumApi }) {
   const [st, setSt] = useState<WaUiStatus | null>(null);
   const [cfg, setCfg] = useState<WaUiSettings | null>(null);
   const [token, setToken] = useState('');
+  const [briefMsg, setBriefMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -119,6 +120,8 @@ export function WhatsAppSettings({ api }: { api: AurumApi }) {
           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <input className="input mono" type="time" aria-label="Briefing time" value={cfg.briefing.time} onChange={(e) => e.target.value && void patch({ briefing: { time: e.target.value } })} />
             <input className="input mono" style={{ width: 190 }} aria-label="Briefing time zone" placeholder="Time zone, e.g. Asia/Karachi" defaultValue={cfg.briefing.tz} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cfg.briefing.tz) void patch({ briefing: { tz: v } }); }} />
+            <Button size="sm" onClick={() => void api.waBriefingTest().then((r) => setBriefMsg(r.message)).catch((e) => setBriefMsg(String(e)))}>Send it now to check</Button>
+            {briefMsg && <span className="hint" role="status">{briefMsg}</span>}
             <label className="ptcheck"><input type="checkbox" checked={cfg.briefing.weekdaysOnly} onChange={(e) => void patch({ briefing: { weekdaysOnly: e.target.checked } })} />Weekdays only</label>
           </div>
         )}

@@ -1,4 +1,4 @@
-> **Update:** orders now go through the AurumBridge EA (`docs/MQL5_BRIDGE.md`). The Python `trading.py` described below was removed; pending orders are not supported over the EA.
+> **Update:** orders now go through the AurumBridge EA (`docs/MQL5_BRIDGE.md`). The Python `trading.py` described below was removed; pending orders (buy/sell limit and stop, cancel, change SL/TP) are now implemented in the EA (`AurumBridge.mq5` 0.11) and the hub; they have been exercised against a protocol stand-in only. The MQL5 code was never compiled or run, so test it on a demo account first.
 
 # Orders: status and design (INCOMPLETE, DEMO ONLY)
 

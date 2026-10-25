@@ -1,3 +1,4 @@
+import { captureChart } from './lib/chartCapture';
 import {
   AiPermissionsSchema, NoTradeRuleSchema, buildSystemPrompt, runAgent, runAiTool, toolCatalog,
   type AccountInfo, type AgentResult, type AlertCommand, type PrepareResult, type ChartControl, type IndicatorStore, type AiPermissions, type AppConfig, type ChartState, type ChatMessage, type ContractSpec, type DrawingStore,
@@ -47,6 +48,8 @@ export function contextLine(c: ChatDeps): string {
 }
 
 export interface TurnOpts {
+  /** Pictures produced by tools (chart screenshots), e.g. to forward to WhatsApp. */
+  onImages?: (images: { mime: string; data: string }[]) => void;
   /** Extra tool definitions (name, description, JSON schema) that only `intercept` handles. */
   extraTools?: { name: string; description: string; inputSchema: Record<string, unknown> }[];
   channel?: 'app' | 'whatsapp';
@@ -70,6 +73,7 @@ export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermiss
     } } : {}),
     alerts: { snapshot: () => st().api!.alertsSnapshot(), dispatch: (c: AlertCommand) => st().api!.alertsDispatch(c) },
     getCandles: (tf: Timeframe, n: number) => st().api!.candles(tf, n),
+    captureChart,
     getSpec: () => st().spec, startOfToday,
     context: {
       getSessions: () => st().api!.contextRead('sessions'),
@@ -88,7 +92,9 @@ export function runTurn(st: () => ChatDeps, history: ChatMessage[], p: AiPermiss
       const held = o.intercept?.(name, input);
       if (held) return held;
       const res = await runAiTool(toolCtx(), name, input);
-      return { ok: res.ok, content: JSON.stringify(res) };
+      const { images, ...plain } = res as typeof res & { images?: { mime: string; data: string }[] };
+      if (images?.length) o.onImages?.(images);
+      return { ok: res.ok, content: JSON.stringify(plain), ...(images?.length ? { images } : {}) };
     },
     ...(o.onMessage ? { onMessage: o.onMessage } : {}),
     ...(o.onEvent ? { onEvent: o.onEvent } : {}),

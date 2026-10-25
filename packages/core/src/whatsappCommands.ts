@@ -93,7 +93,9 @@ export interface RemoteActionHandler {
   executeConfirmed(action: ProposedAction, ctx: RemoteActionContext): Promise<ActionOutcome>;
 }
 
-export interface RemoteAttachment { kind: 'image'; mimeType: string; bytes: Uint8Array }
+export type RemoteAttachment =
+  | { kind: 'image'; mimeType: string; bytes: Uint8Array }
+  | { kind: 'document'; mimeType: string; bytes: Uint8Array; name: string };
 export interface RemoteAiInput {
   text: string;
   attachments: RemoteAttachment[];
@@ -381,9 +383,12 @@ export class WhatsAppPipeline {
       case 'text':
         return this.handleText(m, m.text ?? '', false, commandId, done);
       case 'voice':
+      case 'audio':
         return this.handleVoice(m, commandId, done);
       case 'image':
         return this.handleImage(m, commandId, done);
+      case 'document':
+        return this.handleDocument(m, commandId, done);
       default:
         await this.reply(m.from, `I can't use ${m.kind === 'unsupported' ? 'that kind of message' : `a ${m.kind}`} yet. Please send text.`, 'unsupported', { replyTo: m.id, commandId });
         return done('replied', 'unsupported type');
@@ -579,6 +584,21 @@ export class WhatsAppPipeline {
       return done('failed', 'media download failed');
     }
     return this.handleText(m, m.caption ?? 'Here is an image.', false, commandId, done, [{ kind: 'image', mimeType: file.mimeType, bytes: file.bytes }]);
+  }
+
+  private async handleDocument(m: InboundMessage, commandId: string, done: (s: WaHistoryStatus, d?: string) => void): Promise<void> {
+    if (!this.d.fetchMedia || !m.media) {
+      await this.reply(m.from, 'Files are not supported yet.', 'document', { replyTo: m.id, commandId });
+      return done('replied', 'document not supported');
+    }
+    let file: { bytes: Uint8Array; mimeType: string };
+    try { file = await this.d.fetchMedia(m.media, 'document'); }
+    catch (e) {
+      await this.reply(m.from, `I could not download that file (${clip(e instanceof Error ? e.message : String(e), 120)}).`, 'document', { replyTo: m.id, commandId });
+      return done('failed', 'media download failed');
+    }
+    const name = m.media.filename ?? 'file';
+    return this.handleText(m, m.caption ?? `Here is a file: ${name}.`, false, commandId, done, [{ kind: 'document', mimeType: file.mimeType, bytes: file.bytes, name }]);
   }
 
   // ----- confirmation codes -----------------------------------------------------------------

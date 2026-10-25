@@ -40,3 +40,10 @@ The WhatsApp agent API has no interactive button messages (only text, image, aud
 - Only one proposal is pending at a time; it lasts `confirmTtlSec` (default 2 minutes), works once, only from the linked chat, and never by voice. Trade-level options are hidden unless the permission level is "trade actions".
 - `yes` also selects option 1, `no` cancels. The old `CONFIRM <code>` still works.
 - Replies are reformatted for phones (`whatsappFormat.ts`); the AI is told to answer in short lines.
+
+## Pictures, voice notes and files
+- **You send a photo or screenshot:** it goes to the AI as an image (Anthropic, OpenAI, Gemini). DeepSeek cannot see images; the AI is told so and says it plainly instead of guessing.
+- **You send a PDF:** read natively by Anthropic, OpenAI and Gemini. Text, CSV, JSON and log files are decoded and passed as text (first 30,000 characters). Other types are declined honestly.
+- **You send a voice note:** transcribed with your OpenAI key (gpt-4o-mini-transcribe) or, failing that, your Gemini key. The transcript is echoed ("Heard: ...") and answered like typed text. A voice note can never confirm an action. Anthropic and DeepSeek cannot hear audio; with only those keys the app says so.
+- **"Show me the chart":** the AI calls `get_chart_image`, which captures the active chart pane (candles, indicators, drawings) from the open Aurum window and sends it back as a WhatsApp image. If the window is not open it says so.
+- Only the newest two pictures/files stay in the AI's context; older ones are replaced by a note.

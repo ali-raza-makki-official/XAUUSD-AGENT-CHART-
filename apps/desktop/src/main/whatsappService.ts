@@ -2,13 +2,13 @@ import { randomInt, randomUUID } from 'node:crypto';
 import {
   WhatsAppPipeline, WhatsAppSettingsSchema, inQuietHours,
   type ActionOutcome, type FeedStatus, type NotificationChannel, type NotificationEvent, type OutboundChannel, type ProposedAction,
-  type RemoteActionContext, type RemoteActionHandler, type RemoteAiHandler, type RemoteAiInput, type RemoteAiResult, type Severity, type Tick,
+  type RemoteActionContext, type RemoteActionHandler, type RemoteAiHandler, type RemoteAiInput, type RemoteAiResult, type Severity, type Tick, type Transcriber,
   type WaHistoryEntry, type WhatsAppSettings,
 } from '@aurum/core';
 import { z } from 'zod';
 import { WhatsAppGateway } from './whatsapp';
 import type { SqliteWhatsAppStore } from './whatsappStore';
-import type { WaAiRequest, WaAiResponse, WaExecRequest, WaProposedCall, WaQuietHours, WaUiSettings, WaUiStatus } from '../whatsappShared';
+import type { WaAttachment, WaAiRequest, WaAiResponse, WaExecRequest, WaProposedCall, WaQuietHours, WaUiSettings, WaUiStatus } from '../whatsappShared';
 
 /**
  * Composition root for the WhatsApp gateway: connector + pipeline + store + handlers.
@@ -38,6 +38,8 @@ export interface WhatsAppServiceDeps {
   baseUrl?: string | undefined;
   /** Symbol label for /price. */
   symbolLabel?: () => string;
+  /** Voice notes -> text (main/transcribe.ts). Absent = voice notes are declined politely. */
+  transcriber?: Transcriber;
   onStatusChange?: (s: WaUiStatus) => void;
   now?: () => number;
   log?: (m: string) => void;
@@ -89,6 +91,7 @@ export class WhatsAppService {
       send: this.gateway.sendReply,
       markRead: this.gateway.markRead,
       fetchMedia: this.gateway.downloadMedia,
+      ...(d.transcriber ? { transcriber: d.transcriber } : {}),
       gatewayStatus: () => `WhatsApp: ${this.gateway.status().state}`,
       ...(d.log ? { log: d.log } : {}),
     });
@@ -203,10 +206,14 @@ export class WhatsAppService {
       if (this.paused) return { text: 'Remote AI is paused (/pause). Send /resume to re-enable it.' };
       if (input.attachments.length) { /* images are not forwarded to the headless turn yet; the text still is */ }
       const level = input.canControlChart ? 'chart' : 'ask';
-      const res = await this.askRenderer({ id: randomUUID(), text: input.text, conversationKey: input.conversationKey, level });
+      const attachments: WaAttachment[] = input.attachments.map((a) => (a.kind === 'image'
+        ? { kind: 'image' as const, mime: a.mimeType, data: Buffer.from(a.bytes).toString('base64') }
+        : { kind: 'document' as const, mime: a.mimeType, name: a.name, data: Buffer.from(a.bytes).toString('base64') }));
+      const res = await this.askRenderer({ id: randomUUID(), text: input.text, conversationKey: input.conversationKey, level, ...(attachments.length ? { attachments } : {}) });
       if (!res) return { text: NO_WINDOW };
       if (!res.ok) throw new Error(res.error ?? 'The AI request failed.');
       const out: RemoteAiResult = { text: res.text };
+      if (res.images?.length) out.images = res.images.map((im, i) => ({ bytes: new Uint8Array(Buffer.from(im.data, 'base64')), mimeType: im.mime, filename: `chart-${i + 1}.png` }));
       if (res.options && res.options.length >= 2 && level === 'chart') {
         const [first, ...rest] = res.options;
         out.proposedAction = {

@@ -14,7 +14,7 @@ const msg = (id: string, text: string, ageSec = 1, from = USER): InboundMessage 
   id, from, timestampMs: T0 - ageSec * 1000, kind: 'text', text, caption: undefined, media: undefined, replyTo: undefined, reaction: undefined,
 });
 
-function rig(o: { store?: WhatsAppStore; settings?: Partial<WhatsAppSettings>; ai?: RemoteAiHandler; linked?: boolean } = {}) {
+function rig(o: { store?: WhatsAppStore; settings?: Partial<WhatsAppSettings>; ai?: RemoteAiHandler; linked?: boolean; extra?: Partial<ConstructorParameters<typeof WhatsAppPipeline>[0]> } = {}) {
   const store = o.store ?? new MemoryWhatsAppStore();
   if (o.linked !== false) store.setLink({ status: 'linked', userId: USER, linkedAt: T0 });
   let t = T0;
@@ -28,7 +28,7 @@ function rig(o: { store?: WhatsAppStore; settings?: Partial<WhatsAppSettings>; a
   const ai: RemoteAiHandler = o.ai ?? { handle: async (i) => (i.text.includes('close') ? { text: 'Plan ready.', proposedAction: { kind: 'close_position', payload: { ticket: 1 }, preview: 'Close ticket 1 (GOLD buy 0.10).', level: 'trade' } } : { text: 'ai:' + i.text }) };
   let code = 4821;
   const p = new WhatsAppPipeline({
-    store, actions, ai, now: () => t, randomDigits: (n) => String(code++).padStart(n, '0').slice(0, n),
+    store, actions, ai, now: () => t, ...o.extra, randomDigits: (n) => String(code++).padStart(n, '0').slice(0, n),
     settings: () => WhatsAppSettingsSchema.parse({ permission: 'trade', ...o.settings }),
     send: async (r) => { sent.push(r); return { jobId: 'j', status: 'sent', messageIds: [`wamid.OUT${sent.length}`], partsSent: 1, partsTotal: 1 }; },
   });
@@ -195,5 +195,36 @@ describe.each([['memory', () => new MemoryWhatsAppStore()], ['sqlite', () => new
     r.store.setDelivery('wamid.OUT1', 'read', 2);
     r.store.setDelivery('wamid.OUT1', 'delivered', 3);
     expect(r.store.listHistory(5).find((h) => h.direction === 'out')!.status).toBe('read');
+  });
+});
+
+describe('voice, images and files from WhatsApp', () => {
+  const media = { id: 'm1', mimeType: 'audio/ogg', sha256Base64: undefined, filename: 'plan.pdf', caption: undefined };
+  const fetchMedia = async () => ({ bytes: new Uint8Array([1, 2, 3]), mimeType: 'application/pdf' });
+
+  it('a voice note is transcribed, echoed and answered by the AI, but never confirms an action', async () => {
+    const seen: string[] = [];
+    const ai: RemoteAiHandler = { handle: async (i) => { seen.push(`${i.text}|${i.viaVoice}`); return { text: 'ok' }; } };
+    const r = rig({ ai, extra: { fetchMedia, transcriber: { transcribe: async () => 'gold ka level batao' } } });
+    await r.p.handleBatch([{ ...msg('v1', ''), kind: 'voice', text: undefined, media }]);
+    expect(r.texts()).toContain('Heard: "gold ka level batao"');
+    expect(seen).toEqual(['gold ka level batao|true']);
+  });
+
+  it('a document reaches the AI as an attachment with its name', async () => {
+    let got: { kind: string; name?: string; size: number } | null = null;
+    const ai: RemoteAiHandler = { handle: async (i) => { const a = i.attachments[0]!; got = { kind: a.kind, ...(a.kind === 'document' ? { name: a.name } : {}), size: a.bytes.length }; return { text: 'read it' }; } };
+    const r = rig({ ai, extra: { fetchMedia } });
+    await r.p.handleBatch([{ ...msg('d1', ''), kind: 'document', text: undefined, caption: 'analyse this', media }]);
+    expect(got).toEqual({ kind: 'document', name: 'plan.pdf', size: 3 });
+    expect(r.texts().at(-1)).toBe('read it');
+  });
+
+  it('pictures the AI produces are sent back to the user', async () => {
+    const ai: RemoteAiHandler = { handle: async () => ({ text: 'Here is the chart', images: [{ bytes: new Uint8Array([9]), mimeType: 'image/png', filename: 'chart-1.png' }] }) };
+    const r = rig({ ai });
+    await r.p.handleBatch([msg('s1', 'screenshot dikhao')]);
+    expect(r.sent.at(-1)!.images).toHaveLength(1);
+    expect(r.sent.at(-1)!.images![0]!.mimeType).toBe('image/png');
   });
 });

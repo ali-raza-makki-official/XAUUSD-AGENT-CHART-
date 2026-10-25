@@ -53,7 +53,9 @@ export interface WaUiStatus {
 }
 
 /** Headless AI turn, main -> renderer. */
-export interface WaAiRequest { id: string; text: string; conversationKey: string; level: 'ask' | 'chart' }
+/** Something the user sent on WhatsApp, base64 encoded for the renderer turn. */
+export interface WaAttachment { kind: 'image' | 'document'; mime: string; name?: string; data: string }
+export interface WaAiRequest { id: string; text: string; conversationKey: string; level: 'ask' | 'chart'; attachments?: WaAttachment[] }
 export interface WaProposedCall { name: string; input: unknown }
 export interface WaAiResponse {
   id: string;
@@ -63,6 +65,8 @@ export interface WaAiResponse {
   /** Chart-changing tool calls the AI wanted; held back and only run after a CONFIRM code. */
   proposed?: { calls: WaProposedCall[]; preview: string };
   /** Numbered choices the AI offered (each is a set of chart-changing calls). Option 1 is the first entry. */
+  /** Pictures to send back to the user (e.g. a chart screenshot), base64. */
+  images?: { mime: string; data: string }[];
   options?: { label: string; calls: WaProposedCall[]; preview: string }[];
 }
 /** Confirmed chart actions, main -> renderer (same channel, different shape). */

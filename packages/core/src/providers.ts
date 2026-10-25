@@ -27,6 +27,10 @@ const asObj = (v: unknown): Json => (v && typeof v === 'object' ? (v as Json) : 
 const join = (base: string, path: string) => `${base.replace(/\/+$/, '')}${path}`;
 const textOf = (b: Block[]) => b.filter((x): x is Extract<Block, { type: 'text' }> => x.type === 'text').map((x) => x.text).join('\n');
 const callsOf = (b: Block[]) => b.filter((x): x is Extract<Block, { type: 'tool_call' }> => x.type === 'tool_call');
+const imagesOf = (b: Block[]) => b.filter((x): x is Extract<Block, { type: 'image' }> => x.type === 'image');
+const filesOf = (b: Block[]) => b.filter((x): x is Extract<Block, { type: 'file' }> => x.type === 'file');
+const NO_IMAGE = '[An image was attached but this model cannot see images. Tell the user plainly and do not guess what it shows.]';
+const noFile = (name: string) => `[A file "${name}" was attached but this model cannot read files. Tell the user plainly and do not guess its contents.]`;
 const resultsOf = (b: Block[]) => b.filter((x): x is Extract<Block, { type: 'tool_result' }> => x.type === 'tool_result');
 
 function errMessage(status: number, json: unknown): string {
@@ -78,6 +82,8 @@ export const anthropic: ProviderAdapter = {
       content: m.blocks.map((b) => {
         if (b.type === 'text') return { type: 'text', text: b.text };
         if (b.type === 'tool_call') return { type: 'tool_use', id: b.id, name: b.name, input: b.input ?? {} };
+        if (b.type === 'image') return { type: 'image', source: { type: 'base64', media_type: b.mime, data: b.data } };
+        if (b.type === 'file') return b.mime === 'application/pdf' ? { type: 'document', source: { type: 'base64', media_type: b.mime, data: b.data } } : { type: 'text', text: noFile(b.name) };
         return { type: 'tool_result', tool_use_id: b.callId, content: b.content, ...(b.isError ? { is_error: true } : {}) };
       }),
     }));
@@ -108,7 +114,7 @@ export const anthropic: ProviderAdapter = {
 };
 
 // ------------------------------------------------- OpenAI-compatible (OpenAI, DeepSeek, custom)
-function openaiMessages(system: string, messages: ChatMessage[]): Json[] {
+function openaiMessages(system: string, messages: ChatMessage[], vision: boolean): Json[] {
   const out: Json[] = [{ role: 'system', content: system }];
   for (const m of messages) {
     if (m.role === 'assistant') {
@@ -120,7 +126,17 @@ function openaiMessages(system: string, messages: ChatMessage[]): Json[] {
     } else {
       for (const r of resultsOf(m.blocks)) out.push({ role: 'tool', tool_call_id: r.callId, content: r.content });
       const t = textOf(m.blocks);
-      if (t) out.push({ role: 'user', content: t });
+      const imgs = imagesOf(m.blocks), files = filesOf(m.blocks);
+      if (!vision) {
+        const notes = [...imgs.map(() => NO_IMAGE), ...files.map((f) => noFile(f.name))];
+        if (t || notes.length) out.push({ role: 'user', content: [t, ...notes].filter(Boolean).join('\n') });
+      } else if (imgs.length || files.length) {
+        out.push({ role: 'user', content: [
+          ...(t ? [{ type: 'text', text: t }] : []),
+          ...imgs.map((i) => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.data}` } })),
+          ...files.map((f) => (f.mime === 'application/pdf' ? { type: 'file', file: { filename: f.name, file_data: `data:${f.mime};base64,${f.data}` } } : { type: 'text', text: noFile(f.name) })),
+        ] });
+      } else if (t) out.push({ role: 'user', content: t });
     }
   }
   return out;
@@ -136,7 +152,7 @@ function openaiLike(id: 'openai' | 'deepseek', label: string, baseUrl: string, s
         url: join(cfg.baseUrl, id === 'openai' ? '/v1/chat/completions' : '/chat/completions'), method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.key}` },
         body: JSON.stringify({
-          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages),
+          model: cfg.model, [maxTokensParam]: req.maxTokens, messages: openaiMessages(req.system, req.messages, id === 'openai'),
           ...(req.tools.length ? { tools: toolsOpenAI(req.tools) } : {}),
         }),
       };
@@ -176,6 +192,8 @@ export const gemini: ProviderAdapter = {
       parts: m.blocks.map((b) => {
         if (b.type === 'text') return { text: b.text };
         if (b.type === 'tool_call') return { functionCall: { name: b.name, args: b.input ?? {} } };
+        if (b.type === 'image') return { inlineData: { mimeType: b.mime, data: b.data } };
+        if (b.type === 'file') return { inlineData: { mimeType: b.mime, data: b.data } };
         let response: unknown;
         try { response = JSON.parse(b.content); } catch { response = { result: b.content }; }
         return { functionResponse: { name: b.name, response: b.isError ? { error: response } : (response && typeof response === 'object' && !Array.isArray(response) ? response : { result: response }) } };

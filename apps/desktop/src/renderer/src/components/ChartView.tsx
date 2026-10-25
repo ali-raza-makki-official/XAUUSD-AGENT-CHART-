@@ -11,6 +11,7 @@ import { ChartMapper } from '../lib/mapper';
 import { IndicatorLayer } from '../lib/indicatorLayer';
 import type { ChartSync } from '../lib/chartSync';
 import { DrawingsPrimitive, type Scene } from '../lib/primitive';
+import { registerChartPane } from '../lib/chartCapture';
 import { toolById, type ToolId } from '../lib/tools';
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -124,6 +125,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
     chart.current = c; series.current = s; prim.current = pr;
     mapper.current = new ChartMapper(c, s, [], p.current.tf, p.current.pipSize);
     indLayer.current = new IndicatorLayer(c);
+    const unregisterPane = registerChartPane(p.current.paneId ?? 0, { active: () => !!p.current.active, snap: () => c.takeScreenshot(true, false) });
 
     // Link to the other panes by time (they may have different timeframes).
     const paneId = p.current.paneId ?? 0;
@@ -161,6 +163,7 @@ export const ChartView = forwardRef<ChartHandle, Props>(function ChartView(props
       },
     });
     return () => {
+      unregisterPane();
       unregister?.();
       c.unsubscribeCrosshairMove(onCross as never);
       c.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);

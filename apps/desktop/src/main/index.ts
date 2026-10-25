@@ -7,13 +7,14 @@ import { TimeframeSchema, type AppConfig } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
 import { loadConfig, saveConfig } from './config';
+import { makeTranscriber } from './transcribe';
 import { closeDb, loadChat, loadDrawings, loadIndicators, persist, persistIndicators, saveChat } from './db';
 import * as llm from './llm';
 import * as db from './db';
 import { AlertService } from './alerts';
 import { electronNotifier, registerAlertIpc } from './alertIpc';
 import { initAutoUpdate } from './updater';
-import { clearConnectorSecret, clearKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey, clearWhatsAppToken, getWhatsAppToken, setWhatsAppToken } from './secrets';
+import { clearConnectorSecret, clearKey, getKey, hasKey, secureStorageAvailable, setConnectorSecret, setKey, clearWhatsAppToken, getWhatsAppToken, setWhatsAppToken } from './secrets';
 import { getDb } from './db';
 import { WhatsAppService } from './whatsappService';
 import { OrderService } from './orders';
@@ -164,7 +165,14 @@ function registerIpc(): void {
   ipcMain.handle(IPC.aiListModels, (_e, p: unknown) => llm.listModels(config, provider(p)));
   ipcMain.handle(IPC.aiTest, (_e, p: unknown) => llm.test(config, provider(p)));
   ipcMain.handle(IPC.aiChat, (_e, id: unknown, req: unknown) => {
-    const blocks = z.array(z.object({ type: z.enum(['text', 'tool_call', 'tool_result']) }).passthrough());
+    const media = { mime: z.string().max(100), data: z.string().max(20_000_000) };
+    const blocks = z.array(z.discriminatedUnion('type', [
+      z.object({ type: z.literal('text') }).passthrough(),
+      z.object({ type: z.literal('tool_call') }).passthrough(),
+      z.object({ type: z.literal('tool_result') }).passthrough(),
+      z.object({ type: z.literal('image'), ...media }),
+      z.object({ type: z.literal('file'), name: z.string().max(200), ...media }),
+    ]));
     const parsed = z.object({
       system: z.string().max(20000),
       messages: z.array(z.object({ role: z.enum(['user', 'assistant']), blocks })).max(400),
@@ -239,6 +247,7 @@ else {
       symbolLabel: () => config.symbol,
       getAlerts: () => alerts.listView().map((v) => ({ id: v.alert.id, name: v.alert.name, enabled: v.alert.enabled, summary: v.summary, state: v.status })),
       registerNotificationChannel: (ch) => alerts.registry.register(ch),
+      transcriber: makeTranscriber({ getConfig: () => config, getKey }),
     });
     registerWhatsAppIpc(ipcMain, wa);
     wa.start();

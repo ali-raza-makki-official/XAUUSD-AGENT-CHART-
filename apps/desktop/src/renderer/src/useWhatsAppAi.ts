@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { AiPermissionsSchema, repairHistory, type AiPermissions, type ChatMessage } from '@aurum/core';
-import type { WaAiRequest, WaExecRequest, WaProposedCall } from '../../whatsappShared';
+import { AiPermissionsSchema, dropOldMedia, repairHistory, type AiPermissions, type ChatMessage } from '@aurum/core';
+import type { WaAttachment, WaAiRequest, WaExecRequest, WaProposedCall } from '../../whatsappShared';
 import { contextLine, execConfirmed, perms, runTurn, type ChatDeps } from './aiTurn';
 
 /** Tools that change the chart. From WhatsApp they are held back and only run after the user types CONFIRM <code>. */
@@ -9,6 +9,22 @@ const CHART_CHANGING = new Set([
   'add_indicator', 'update_indicator', 'remove_indicator', 'set_layout', 'set_timeframe', 'undo_action',
 ]);
 const MAX_HISTORY = 24;
+const MAX_FILE_TEXT = 30_000;
+const TEXT_MIME = /^(text\/|application\/(json|xml|csv|x-ndjson))/i;
+
+/** What the user sent on WhatsApp, as model input. Readable files become text; PDFs and images go as files/images. */
+export function attachmentBlocks(list: WaAttachment[]): ChatMessage['blocks'] {
+  return list.map((a): ChatMessage['blocks'][number] => {
+    if (a.kind === 'image') return { type: 'image', mime: a.mime, data: a.data };
+    const name = a.name ?? 'file';
+    if (a.mime === 'application/pdf') return { type: 'file', mime: a.mime, name, data: a.data };
+    if (TEXT_MIME.test(a.mime) || /\.(txt|csv|md|json|log)$/i.test(name)) {
+      const text = new TextDecoder().decode(Uint8Array.from(atob(a.data), (c) => c.charCodeAt(0)));
+      return { type: 'text', text: `File "${name}":\n${text.slice(0, MAX_FILE_TEXT)}${text.length > MAX_FILE_TEXT ? '\n…[file cut]' : ''}` };
+    }
+    return { type: 'text', text: `[The user sent a file "${name}" (${a.mime}) that cannot be read here. Say so; do not guess its contents.]` };
+  });
+}
 const SUFFIX = '\n\n[channel: WhatsApp. Answer in short plain text, no markdown tables. Anything that changes the chart is held until the user replies with an option number. When there are several sensible variants, call offer_options.]';
 
 const OFFER_OPTIONS_TOOL = {
@@ -86,12 +102,15 @@ export function useWhatsAppAi(deps: ChatDeps): void {
             : { ...base, drawingsEdit: false, indicatorsEdit: false, chartControl: false, alertsAndSetups: false, orders: 'suggest', sltpAndPartialClose: false, bulkClose: false },
         );
         const prev = histories.current.get(req.conversationKey) ?? [];
-        const history: ChatMessage[] = [...prev, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${req.text}${SUFFIX}` }] }];
+        const sent = attachmentBlocks(req.attachments ?? []);
+        const history: ChatMessage[] = dropOldMedia([...prev, { role: 'user', blocks: [{ type: 'text', text: `${contextLine(st())}\n\n${req.text}${SUFFIX}` }, ...sent] }], 2);
+        const pictures: { mime: string; data: string }[] = [];
         const held: WaProposedCall[] = [];
         let card: Analysis | null = null;
         let offered: { label: string; calls: WaProposedCall[] }[] = [];
         const r = await runTurn(st, history, p, {
           channel: 'whatsapp',
+          onImages: (im) => pictures.push(...im),
           ...(req.level === 'chart' ? { extraTools: [OFFER_OPTIONS_TOOL] } : {}),
           intercept: (name, input) => {
             if (name === 'offer_options') {
@@ -115,6 +134,7 @@ export function useWhatsAppAi(deps: ChatDeps): void {
         const text = parts.join('\n\n') || (r.ended === 'max_steps' ? 'The AI used all its steps without finishing. Ask again, more narrowly.' : 'No answer.');
         respond({
           id: req.id, ok: true, text,
+          ...(pictures.length ? { images: pictures.slice(0, 3) } : {}),
           ...(offered.length ? { options: offered.map((o) => ({ ...o, preview: `${o.label}:\n${o.calls.map((h) => `- ${h.name} ${JSON.stringify(h.input).slice(0, 160)}`).join('\n')}` })) } : {}),
           ...(held.length && !offered.length ? { proposed: { calls: held, preview: `Proposed chart changes:\n${held.map((h) => `- ${h.name} ${JSON.stringify(h.input).slice(0, 200)}`).join('\n')}` } } : {}),
         });

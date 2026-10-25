@@ -130,6 +130,8 @@ export interface ToolContext {
   context?: ContextAccess;
   /** Order previews (propose_order_action). Absent = the tool reports unavailable. */
   orders?: OrdersPort;
+  /** PNG of the chart as the user sees it (candles, indicators, drawings). Absent or null = no chart is on screen. */
+  captureChart?: () => Promise<{ mime: string; data: string } | null>;
 }
 
 export interface AlertsPort {
@@ -137,7 +139,7 @@ export interface AlertsPort {
   dispatch(cmd: AlertCommand): Promise<AlertDispatchResult> | AlertDispatchResult;
 }
 
-export type ToolResult = { ok: true; data: unknown } | { ok: false; code: 'permission_denied' | 'invalid_input' | 'rejected' | 'unavailable'; error: string };
+export type ToolResult = { ok: true; data: unknown; /** Pictures for the model (and, on WhatsApp, for the user). Never sent as JSON text. */ images?: { mime: string; data: string }[] } | { ok: false; code: 'permission_denied' | 'invalid_input' | 'rejected' | 'unavailable'; error: string };
 const fail = (code: Extract<ToolResult, { ok: false }>['code'], error: string): ToolResult => ({ ok: false, code, error });
 
 export interface AiTool {
@@ -308,6 +310,19 @@ export const AI_TOOLS: AiTool[] = [
         ...(want('order_blocks') ? { orderBlocks: recent(r.orderBlocks.filter((x) => !act || x.valid)) } : {}),
         ...(want('patterns') ? { patterns: recent(r.patterns) } : {}),
       } };
+    },
+  },
+  {
+    name: 'get_chart_image',
+    description: 'Take a screenshot of the chart exactly as the user sees it (candles, indicators and drawings). Use it to LOOK at the chart, to check where your drawings landed, or when the user asks to see the chart. On WhatsApp the picture is also sent to the user. Prices and levels must still come from get_candles / find_zones, not from reading the picture.',
+    input: z.object({}), needs: (p) => p.chartRead, needsLabel: 'Chart read',
+    async run(ctx) {
+      if (!ctx.captureChart) return fail('unavailable', 'No chart screenshot is available in this session.');
+      let shot: { mime: string; data: string } | null = null;
+      try { shot = await ctx.captureChart(); } catch (e) { return fail('unavailable', e instanceof Error ? e.message : String(e)); }
+      if (!shot) return fail('unavailable', 'The chart is not on screen, so no screenshot could be taken. Open the Aurum window.');
+      const st = ctx.getState();
+      return { ok: true, data: { captured: true, symbol: st.symbol, timeframe: st.timeframe, note: 'The image follows as a picture.' }, images: [shot] };
     },
   },
   {

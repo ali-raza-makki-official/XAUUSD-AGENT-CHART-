@@ -1,6 +1,7 @@
-import { useCallback, useState, type ReactNode } from 'react';
-import { CircleCheck, CircleX, LoaderCircle, ShieldAlert, TriangleAlert } from 'lucide-react';
-import { stampCommand, type AnyOrderCommand, type OrderRecord, type PrepareResult } from '@aurum/core';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { CircleCheck, CircleHelp, CircleX, LoaderCircle, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { stampCommand, type AnyOrderCommand, type AppConfig, type ChecklistResult, type OrderRecord, type PrepareResult } from '@aurum/core';
+import { gatherChecklist } from '../lib/pretrade';
 import type { AurumApi } from '../../../shared';
 import { Button, Chip } from './ui';
 
@@ -8,14 +9,27 @@ type Prepared = Extract<PrepareResult, { ok: true; executable: boolean }>;
 type Phase =
   | { k: 'closed' }
   | { k: 'preparing' }
-  | { k: 'review'; p: Prepared; extra: string[] }
+  | { k: 'review'; p: Prepared; extra: string[]; list: ChecklistResult | null | 'loading' }
   | { k: 'sending'; p: Prepared }
   | { k: 'done'; p: Prepared; r: OrderRecord }
   | { k: 'error'; message: string };
 
 /** Every order action goes prepare -> review -> explicit Confirm -> result. Nothing is sent without the Confirm click. */
-export function useOrderFlow(api: AurumApi | undefined, symbol: string) {
+export function useOrderFlow(api: AurumApi | undefined, symbol: string, config?: AppConfig | null, tick?: { bid: number; ask: number } | null) {
+  const tickRef = useRef(tick ?? null);
+  tickRef.current = tick ?? null;
   const [phase, setPhase] = useState<Phase>({ k: 'closed' });
+  const [ack, setAck] = useState(false);
+  const [ticked, setTicked] = useState<string[]>([]);
+  const review = useCallback((p: Prepared, extra: string[]) => {
+    setAck(false); setTicked([]);
+    setPhase({ k: 'review', p, extra, list: config && api ? 'loading' : null });
+    if (!config || !api) return;
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 6000));
+    void Promise.race([gatherChecklist(api, config, p, tickRef.current).catch((e) => { console.error('checklist failed:', e); return null; }), timeout]).then((list) => {
+      setPhase((cur) => (cur.k === 'review' && cur.p.commandId === p.commandId ? { ...cur, list } : cur));
+    });
+  }, [api, config]);
 
   const open = useCallback(async (body: { type: string } & Record<string, unknown>, extra: string[] = []) => {
     if (!api) return;
@@ -24,13 +38,13 @@ export function useOrderFlow(api: AurumApi | undefined, symbol: string) {
       const res = await api.ordersPrepare(stampCommand(body, { actor: 'manual', symbol }) as unknown as AnyOrderCommand);
       if (!res.ok) setPhase({ k: 'error', message: res.error });
       else if (!('preview' in res)) setPhase({ k: 'error', message: 'This command was already handled.' });
-      else setPhase({ k: 'review', p: res as Prepared, extra });
+      else review(res as Prepared, extra);
     } catch (e) { setPhase({ k: 'error', message: e instanceof Error ? e.message : String(e) }); }
-  }, [api, symbol]);
+  }, [api, symbol, review]);
 
   const dialog: ReactNode = phase.k === 'closed' ? null : (
     <OrderDialog
-      phase={phase} onClose={() => setPhase({ k: 'closed' })}
+      phase={phase} ack={ack} onAck={setAck} ticked={ticked} onTick={(id, on) => setTicked((t) => (on ? [...t, id] : t.filter((x) => x !== id)))} onClose={() => setPhase({ k: 'closed' })}
       onConfirm={async () => {
         if (phase.k !== 'review' || !api) return;
         const p = phase.p;
@@ -44,13 +58,18 @@ export function useOrderFlow(api: AurumApi | undefined, symbol: string) {
       }}
     />
   );
-  const showPrepared = useCallback((p: PrepareResult) => { if (p.ok && 'preview' in p) setPhase({ k: 'review', p: p as Prepared, extra: ['Proposed by the AI. Check every line yourself; the risk rules run again when you confirm.'] }); }, []);
+  const showPrepared = useCallback((p: PrepareResult) => { if (p.ok && 'preview' in p) review(p as Prepared, ['Proposed by the AI. Check every line yourself; the risk rules run again when you confirm.']); }, [review]);
   const fail = useCallback((message: string) => setPhase({ k: 'error', message }), []);
   return { open, fail, showPrepared, dialog };
 }
 
-function OrderDialog({ phase, onClose, onConfirm, onReconcile }: { phase: Phase; onClose: () => void; onConfirm: () => void; onReconcile: () => void }) {
+function OrderDialog({ phase, ack, onAck, ticked, onTick, onClose, onConfirm, onReconcile }: { phase: Phase; ack: boolean; onAck: (v: boolean) => void; ticked: string[]; onTick: (id: string, on: boolean) => void; onClose: () => void; onConfirm: () => void; onReconcile: () => void }) {
   const p = 'p' in phase ? phase.p : null;
+  const list = phase.k === 'review' && phase.list && phase.list !== 'loading' ? phase.list : null;
+  const loadingList = phase.k === 'review' && phase.list === 'loading';
+  const missingRequired = list ? list.manual.filter((m) => m.required && !ticked.includes(m.id)).length : 0;
+  const needAck = !!list?.needsAck && !ack;
+  const ready = !loadingList && missingRequired === 0 && !needAck;
   const busy = phase.k === 'preparing' || phase.k === 'sending';
   return (
     <div className="dialog-back page" role="presentation">
@@ -72,6 +91,8 @@ function OrderDialog({ phase, onClose, onConfirm, onReconcile }: { phase: Phase;
                   <div><b>Blocked by the risk rules:</b>{phase.p.gate.failures.map((f, i) => <div key={i}>{f.message}</div>)}</div>
                 </div>
               )}
+              {loadingList && <div className="row hint"><LoaderCircle size={14} className="spin" /> Loading the pre-trade checklist…</div>}
+              {list && <Checklist list={list} ack={ack} onAck={onAck} ticked={ticked} onTick={onTick} />}
               <span className="hint">Nothing is sent until you press the button below. This request expires in about 2 minutes.</span>
             </>
           )}
@@ -81,7 +102,8 @@ function OrderDialog({ phase, onClose, onConfirm, onReconcile }: { phase: Phase;
           {phase.k === 'review' && (
             <>
               <Button onClick={onClose} autoFocus>Cancel</Button>
-              <Button variant={phase.p.preview.destructive ? 'danger' : 'primary'} disabled={!phase.p.executable} onClick={onConfirm}>
+              {!ready && !loadingList && <span className="hint">Finish the checklist to confirm.</span>}
+              <Button variant={phase.p.preview.destructive ? 'danger' : 'primary'} disabled={!phase.p.executable || !ready} onClick={onConfirm}>
                 {phase.p.preview.destructive ? 'Confirm and send to MT5' : 'Confirm and send to MT5'}
               </Button>
             </>
@@ -107,5 +129,40 @@ function Result({ r }: { r: OrderRecord }) {
         {unknown && <div>The order may or may not have reached the broker. Aurum will not send it again. Press "Check MT5 now", or look at MT5 yourself.</div>}
       </div>
     </div>
+  );
+}
+
+
+const STATUS_ICON = { pass: CircleCheck, fail: CircleX, warn: TriangleAlert, unknown: CircleHelp } as const;
+const STATUS_WORD = { pass: 'OK', fail: 'Fails', warn: 'Careful', unknown: 'Unknown' } as const;
+
+/** Pre-trade checklist: automatic checks from real data, then your own questions. Unknown is shown, never counted as pass. */
+function Checklist({ list, ack, onAck, ticked, onTick }: { list: ChecklistResult; ack: boolean; onAck: (v: boolean) => void; ticked: string[]; onTick: (id: string, on: boolean) => void }) {
+  return (
+    <section className="pretrade" aria-label="Pre-trade checklist">
+      <h4>Pre-trade checklist</h4>
+      <ul className="ptlist">
+        {list.items.map((it) => {
+          const Icon = STATUS_ICON[it.status];
+          return (
+            <li key={it.id} className={`pt pt-${it.status}`}>
+              <Icon size={15} aria-hidden="true" />
+              <div><b>{it.label}</b><span className="hint">{it.detail}</span></div>
+              <span className="ptword">{STATUS_WORD[it.status]}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {list.manual.length > 0 && (
+        <div className="ptmanual">
+          {list.manual.map((m) => (
+            <label key={m.id} className="ptcheck"><input type="checkbox" checked={ticked.includes(m.id)} onChange={(e) => onTick(m.id, e.target.checked)} /><span>{m.label}{m.required && <em> (required)</em>}</span></label>
+          ))}
+        </div>
+      )}
+      {list.needsAck && (
+        <label className="ptcheck ptack"><input type="checkbox" checked={ack} onChange={(e) => onAck(e.target.checked)} /><span>I have read the items marked Fails or Careful and still want to go ahead.</span></label>
+      )}
+    </section>
   );
 }

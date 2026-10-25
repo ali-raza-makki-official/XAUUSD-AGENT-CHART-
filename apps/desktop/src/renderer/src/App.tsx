@@ -65,7 +65,7 @@ export function App() {
   const [spec, setSpec] = useState<SymbolSpec | null>(null);
   const selected = useMemo(() => drawings.find((d) => d.id === selectedId) ?? null, [drawings, selectedId]);
 
-  const flow = useOrderFlow(api, config?.brokerSymbol ?? 'GOLD');
+  const flow = useOrderFlow(api, config?.brokerSymbol ?? 'GOLD', config, tick);
   const aiChart = { setLayout: (l: ChartLayout, t?: Timeframe[]) => { void update(withLayout(layoutCfg, l, t)); }, setPaneTimeframe: (p: number, t: Timeframe) => { void update(withPaneTimeframe(layoutCfg, p, t)); }, setSyncScroll: (on: boolean) => { void update({ syncScroll: on }); } };
   const aiLayout = { layout, paneTimeframes: tfs, activePane, syncScroll: config?.syncScroll ?? false };
   const chat = useAiChat({ api, config, store, tf, tick, status, account, spec, selectedId, paused: aiPaused, indicators: ind.store, chart: aiChart, layout: aiLayout, onOrderProposal: flow.showPrepared });

@@ -123,6 +123,7 @@ function AiTab({ api, config, onSave }: { api: AurumApi; config: AppConfig; onSa
 function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSave'] }) {
   const [enabled, setEnabled] = useState(config.trading.enabled);
   const [risk, setRisk] = useState(config.risk);
+  const [cl, setCl] = useState(config.checklist);
   const [msg, setMsg] = useState<string | null>(null);
   const num = (k: keyof typeof risk, label: string, step = 0.1) => (
     <div className="irow" key={String(k)}>
@@ -148,7 +149,34 @@ function TradingTab({ config, onSave }: { config: AppConfig; onSave: Props['onSa
         </div>
         <span className="hint">Manage only: no new risk, but you can move SL toward safety and close or reduce. A stop loss is always required.</span>
       </Section>
-      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
+      <Section title="Pre-trade checklist (shown before every new order)">
+        <div className="perm"><div><b>Show the checklist on the order review page</b><span className="hint">Checks use real data. When data is missing (for example no calendar connected) the item says Unknown, never OK.</span></div><Switch label="Pre-trade checklist" checked={cl.enabled} onChange={(v) => setCl({ ...cl, enabled: v })} /></div>
+        {cl.enabled && (
+          <>
+            <div className="irow"><span className="ilabel">Minimum reward : risk</span><input className="input mono" type="number" step={0.1} min={0.1} value={cl.minRewardRisk} aria-label="Minimum reward to risk" onChange={(e) => setCl({ ...cl, minRewardRisk: Number(e.target.value) })} /></div>
+            <div className="irow"><span className="ilabel">Warn after losing trades in a row</span><input className="input mono" type="number" step={1} min={1} max={10} value={cl.streakWarn} aria-label="Losing streak warning" onChange={(e) => setCl({ ...cl, streakWarn: Number(e.target.value) })} /></div>
+            <div className="irow"><span className="ilabel">Warn at % of daily loss limit used</span><input className="input mono" type="number" step={5} min={10} max={100} value={cl.dailyWarnPct} aria-label="Daily limit warning percent" onChange={(e) => setCl({ ...cl, dailyWarnPct: Number(e.target.value) })} /></div>
+            <div className="irow"><span className="ilabel">Preferred sessions</span>
+              <div className="row" role="group" aria-label="Preferred sessions">
+                {(['sydney', 'tokyo', 'london', 'newyork'] as const).map((id) => (
+                  <label key={id} className="ptcheck"><input type="checkbox" checked={cl.sessions.includes(id)} onChange={(e) => setCl({ ...cl, sessions: e.target.checked ? [...cl.sessions, id] : cl.sessions.filter((x) => x !== id) })} />{id === 'newyork' ? 'New York' : id[0]!.toUpperCase() + id.slice(1)}</label>
+                ))}
+              </div>
+            </div>
+            <span className="hint">No session ticked = any time is fine.</span>
+            <b style={{ fontSize: 12 }}>Your own questions</b>
+            {cl.manual.map((m, i) => (
+              <div className="row" key={m.id} style={{ gap: 8 }}>
+                <input className="input" style={{ flex: 1 }} value={m.label} aria-label={`Question ${i + 1}`} maxLength={120} onChange={(e) => setCl({ ...cl, manual: cl.manual.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                <label className="ptcheck"><input type="checkbox" checked={m.required} onChange={(e) => setCl({ ...cl, manual: cl.manual.map((x, j) => (j === i ? { ...x, required: e.target.checked } : x)) })} />Required</label>
+                <IconButton label="Remove question" onClick={() => setCl({ ...cl, manual: cl.manual.filter((_, j) => j !== i) })}><X size={14} /></IconButton>
+              </div>
+            ))}
+            {cl.manual.length < 10 && <div><Button size="sm" onClick={() => setCl({ ...cl, manual: [...cl.manual, { id: `q${Date.now().toString(36).slice(-6)}`, label: 'New question', required: false }] })}>Add a question</Button></div>}
+          </>
+        )}
+      </Section>
+      <div><Button variant="primary" onClick={() => void onSave({ trading: { enabled }, risk, checklist: { ...cl, manual: cl.manual.filter((m) => m.label.trim().length >= 2) } }).then(() => setMsg('Saved. The MT5 bridge restarts when you change the trading switch.'))}>Save trading settings</Button> {msg && <span className="hint">{msg}</span>}</div>
     </>
   );
 }

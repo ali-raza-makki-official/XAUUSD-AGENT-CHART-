@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
+import { ChecklistSettingsSchema, NotificationSettingsSchema, AiPermissionsSchema, AiSettingsSchema, ChartLayoutSchema, ContextSettingsSchema, RiskSettingsSchema, DrawingSchema, IndicatorSchema, PROVIDER_IDS, PaneTimeframesSchema, ProviderIdSchema, StyleSchema } from '@aurum/core';
 import { TimeframeSchema, type AppConfig, type FeedStatus } from '@aurum/core';
 import { startBackups } from './backup';
 import { BridgeManager } from './bridge';
@@ -120,6 +120,7 @@ function registerIpc(): void {
         syncScroll: z.boolean(),
         context: ContextSettingsSchema,
         notifications: NotificationSettingsSchema,
+        checklist: ChecklistSettingsSchema,
       })
       .partial()
       .parse(patch);

@@ -35,3 +35,4 @@ export * from './structure';
 export * from './whatsappFormat';
 export * from './modelCaps';
 export * from './performance';
+export * from './preTrade';

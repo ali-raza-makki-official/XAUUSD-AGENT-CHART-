@@ -403,3 +403,21 @@ body.resizing .splitter { pointer-events: auto; }
 .stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--bg-panel); }
 .stat .l { color: var(--t3); font-size: 11px; }
 .stat .v { font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+.pretrade { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-raised); padding: 12px 16px; display: grid; gap: 10px; }
+.pretrade h4 { margin: 0; font-size: 13px; }
+.ptlist { list-style: none; margin: 0; padding: 0; display: grid; }
+.pt { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.pt:last-child { border-bottom: 0; }
+.pt > div { display: grid; gap: 2px; }
+.pt .hint { font-size: 12px; }
+.ptword { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pt-pass svg, .pt-pass .ptword { color: var(--buy); }
+.pt-fail svg, .pt-fail .ptword { color: var(--sell); }
+.pt-warn svg, .pt-warn .ptword { color: var(--warn); }
+.pt-unknown svg, .pt-unknown .ptword { color: var(--t3); }
+.ptmanual { display: grid; gap: 6px; padding-top: 4px; }
+.ptcheck { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.ptcheck input { margin-top: 3px; }
+.ptcheck em { color: var(--gold); font-style: normal; }
+.ptack { border-top: 1px solid var(--border); padding-top: 10px; }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { StyleSchema } from './drawing';
 import { NotificationSettingsSchema } from './notifications';
 import { TimeframeSchema } from './feed';
+import { ChecklistSettingsSchema, DEFAULT_CHECKLIST } from './preTrade';
 import { ChartLayoutSchema, DEFAULT_PANE_TIMEFRAMES, PaneTimeframesSchema } from './chartLayout';
 import { ContextSettingsSchema } from './contextConnectors';
 
@@ -77,6 +78,7 @@ export const AppConfigSchema = z.object({
   magnet: z.boolean().default(true),
   stayInTool: z.boolean().default(false),
   risk: RiskSettingsSchema.default(() => DEFAULT_RISK_SETTINGS),
+  checklist: ChecklistSettingsSchema.default(() => DEFAULT_CHECKLIST),
   aiPermissions: AiPermissionsSchema.default(() => DEFAULT_AI_PERMISSIONS),
   ai: AiSettingsSchema.default(() => AiSettingsSchema.parse({})),
   notifications: NotificationSettingsSchema.default(() => NotificationSettingsSchema.parse({})),
